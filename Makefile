@@ -2,7 +2,7 @@
 # Params.
 ###
 
-PROJECT_FULL_NAME := dal
+PROJECT_FULL_NAME := httpclient
 
 HAS_GODOC := $(shell command -v godoc;)
 HAS_GOLANGCI := $(shell command -v golangci-lint;)
@@ -11,22 +11,10 @@ HAS_DOCKER_COMPOSE := $(shell command -v docker-compose;)
 default: ci
 
 ###
-# Validate variables.
-###
-
-ENV_FILE ?= testing.env
-
-ifneq ($(filter development.env integration.env testing.env,$(ENV_FILE)),)
-else
-$(error ENV_FILE must be either "development.env" or "integration.env" or "testing.env")
-endif
-
-###
 # Entries.
 ###
 
 ci: lint test coverage
-ci-integration: lint test-integration coverage
 
 coverage:
 	@go tool cover -func=coverage.out && echo "Coverage OK"
@@ -34,23 +22,6 @@ coverage:
 deps:
 	@go install golang.org/x/tools/cmd/godoc@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
-
-infra-start:
-ifndef HAS_DOCKER_COMPOSE
-	@echo "Could not find docker-compose, please install it"
-endif
-	@echo "Starting required infrastructure"
-	@docker-compose -f resources/docker-compose.yml up -d mongodb
-	@docker-compose -f resources/docker-compose.yml up -d redis
-	@docker-compose -f resources/docker-compose.yml up -d elasticsearch
-	@docker-compose -f resources/docker-compose.yml up -d postgres
-
-infra-stop:
-ifndef HAS_DOCKER_COMPOSE
-	@echo "Could not find docker-compose, please install it"
-endif
-	@echo "Stopping required infrastructure"
-	@docker-compose -f resources/docker-compose.yml down
 
 doc:
 ifndef HAS_GODOC
@@ -71,17 +42,9 @@ test:
 	@ENVIRONMENT="testing" configurer l d -f testing.env -- go test -timeout 30s -short -v -race -cover \
 	-coverprofile=coverage.out ./... && echo "Test OK"
 
-test-integration:
-	@ENVIRONMENT="integration" configurer l d -f integration.env -- go test -timeout 120s -v -race \
-	-cover -coverprofile=coverage.out ./... && echo "Integration test OK"
-
 .PHONY: ci \
-	ci-integration \
 	coverage \
 	deps \
-	infra-start \
-	infra-stop \
 	doc \
 	lint \
-	test \
-	test-integration
+	test

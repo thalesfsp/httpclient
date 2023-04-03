@@ -177,7 +177,7 @@ func (c *Client) request(
 
 	c.Logger.PrintlnWithOptions(
 		level.Debug,
-		"created request",
+		status.Created.String()+" request",
 		sypl.WithFields(reqFields),
 	)
 

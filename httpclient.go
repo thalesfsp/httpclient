@@ -283,6 +283,11 @@ func (c *Client) request(
 		return nil, err
 	}
 
+	// If 2xx neither 4xx, return an error with the status code.
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		return nil, customerror.NewHTTPError(resp.StatusCode)
+	}
+
 	c.counterSuccess.Add(1)
 
 	//////

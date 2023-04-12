@@ -87,7 +87,7 @@ func (c *Client) GetName() string {
 // CLOSING IT. Otherwise, the body will be left open, and returned. In this case
 // IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
 //
-//nolint:gocognit,goerr113,bodyclose
+//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx
 func (c *Client) request(
 	ctx context.Context,
 	method string,

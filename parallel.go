@@ -20,7 +20,7 @@ func (c *Client) ParallelGet(
 	opts []Func,
 	urls ...string,
 ) ([]*http.Response, concurrentloop.Errors) {
-	return concurrentloop.Run(ctx, urls, func(ctx context.Context, url string) (*http.Response, error) {
+	return concurrentloop.Map(ctx, urls, func(ctx context.Context, url string) (*http.Response, error) {
 		return c.Get(ctx, url, opts...)
 	})
 }

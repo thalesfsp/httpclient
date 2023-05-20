@@ -129,7 +129,7 @@ func (c *Client) request(
 	// Setup query params.
 	//////
 
-	if options.QueryParams != nil {
+	if len(options.QueryParams) > 0 {
 		q := req.URL.Query()
 
 		for k, v := range options.QueryParams {
@@ -412,8 +412,8 @@ func New(
 // NewDefault is like new, but uses the default values.
 func NewDefault(name string) *Client {
 	return New(name, map[string]string{
-		"Accept":                     "application/json",
-		"Content-shared.PackageName": "application/json",
-		"User-Agent":                 name,
+		"Accept":       "*/*",
+		"Content-Type": "application/json",
+		"User-Agent":   name,
 	}, 0, 0, 0)
 }

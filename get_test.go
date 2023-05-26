@@ -126,7 +126,7 @@ func TestClient_Get_RespBody(t *testing.T) {
 			defer cancel()
 
 			// Retrieve client - it will be automatically setup.
-			c := Get()
+			c := NewDefault("test")
 
 			// Get will automagically fill `testData` with the response.
 			var testData shared.TestDataS

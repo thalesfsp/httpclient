@@ -418,8 +418,6 @@ func New(
 		return nil, errOut
 	}
 
-	singleton.GetName()
-
 	return singleton, nil
 }
 
@@ -432,7 +430,23 @@ func NewDefault(name string) (*Client, error) {
 	}, 0, 0, 0)
 }
 
-// Initialize is like NewDefault, it uses default values and a random name.
-func Initialize() (*Client, error) {
-	return NewDefault(shared.GenerateUUID())
+// Initialize setup the HTTP client. Use options to customize it.
+func Initialize(opts ...ClientFunc) (*Client, error) {
+	//////
+	// Initialize and process options.
+	//////
+
+	options := &ClientOptions{}
+
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return nil, err
+		}
+	}
+
+	if options.Name == "" {
+		options.Name = shared.PackageName + "-" + shared.GenerateUUID()
+	}
+
+	return NewDefault(options.Name)
 }

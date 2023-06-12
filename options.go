@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/thalesfsp/customerror"
@@ -135,6 +136,37 @@ func WithRespBody(body interface{}) Func {
 		}
 
 		o.RespBody = body
+
+		return nil
+	}
+}
+
+//////
+// Client's specific options.
+//////
+
+// ClientOptions options specific to setting up the client.
+type ClientOptions struct {
+	// Name of the HTTP client.
+	Name string
+}
+
+// ClientFunc defines the function signature for setting up the client.
+type ClientFunc func(o *ClientOptions) error
+
+// WithClientName set the name of the HTTP client.
+func WithClientName(name string) ClientFunc {
+	return func(o *ClientOptions) error {
+		o.Name = name
+
+		return nil
+	}
+}
+
+// WithPrefix set the prefix of the HTTP metrics.
+func WithPrefix(prefix string) ClientFunc {
+	return func(o *ClientOptions) error {
+		os.Setenv("HTTPCLIENT_METRICS_PREFIX", prefix)
 
 		return nil
 	}

@@ -353,11 +353,12 @@ func New(
 	timeout time.Duration,
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
-) *Client {
+) (*Client, error) {
 	// Enforces IHTTP interface implementation.
 	var (
 		_      IHTTP = (*Client)(nil)
 		client *Client
+		errOut error
 	)
 
 	once.Do(func() {
@@ -394,7 +395,7 @@ func New(
 
 		// Validate the HTTP client.
 		if err := validation.Validate(client); err != nil {
-			panic(err)
+			errOut = err
 		}
 
 		client.GetLogger().PrintlnWithOptions(
@@ -406,14 +407,24 @@ func New(
 		singleton = client
 	})
 
-	return singleton
+	if errOut != nil {
+		return nil, errOut
+	}
+
+	return singleton, nil
 }
 
 // NewDefault is like new, but uses the default values.
-func NewDefault(name string) *Client {
+func NewDefault(name string) (*Client, error) {
 	return New(name, map[string]string{
 		"Accept":       "*/*",
 		"Content-Type": "application/json",
 		"User-Agent":   name,
 	}, 0, 0, 0)
+}
+
+// NewDefaultAuto is like new, but uses the default values and generates a
+// random name.
+func NewDefaultAuto() (*Client, error) {
+	return NewDefault(shared.GenerateUUID())
 }

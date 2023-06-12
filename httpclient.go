@@ -69,6 +69,13 @@ func (c *Client) GetName() string {
 	return c.Name
 }
 
+// SetName sets the HTTP client name.
+func (c *Client) SetName(name string) *Client {
+	c.Name = name
+
+	return c
+}
+
 //////
 // Methods.
 //////
@@ -411,6 +418,8 @@ func New(
 		return nil, errOut
 	}
 
+	singleton.GetName()
+
 	return singleton, nil
 }
 
@@ -423,8 +432,7 @@ func NewDefault(name string) (*Client, error) {
 	}, 0, 0, 0)
 }
 
-// NewDefaultAuto is like new, but uses the default values and generates a
-// random name.
-func NewDefaultAuto() (*Client, error) {
+// Initialize is like NewDefault, it uses default values and a random name.
+func Initialize() (*Client, error) {
 	return NewDefault(shared.GenerateUUID())
 }

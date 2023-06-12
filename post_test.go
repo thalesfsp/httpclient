@@ -59,7 +59,10 @@ func TestClient_Post(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
 			defer cancel()
 
-			c := NewDefault("test")
+			c, err := NewDefault("test")
+			if err != nil {
+				t.Fatalf("NewDefault() error = %v", err)
+			}
 
 			var testData shared.TestDataS
 

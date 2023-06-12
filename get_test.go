@@ -54,7 +54,10 @@ func TestClient_Get(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
 			defer cancel()
 
-			c := NewDefault("test")
+			c, err := NewDefault("test")
+			if err != nil {
+				t.Fatalf("NewDefault() error = %v", err)
+			}
 
 			got, err := c.Get(ctx, server.URL, tt.args.opts...)
 
@@ -126,7 +129,10 @@ func TestClient_Get_RespBody(t *testing.T) {
 			defer cancel()
 
 			// Retrieve client - it will be automatically setup.
-			c := NewDefault("test")
+			c, err := NewDefault("test")
+			if err != nil {
+				t.Fatalf("NewDefault() error = %v", err)
+			}
 
 			// Get will automagically fill `testData` with the response.
 			var testData shared.TestDataS

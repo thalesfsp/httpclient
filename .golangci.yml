@@ -91,6 +91,7 @@ issues:
         - ifshort
         - maligned
         - maintidx
+        - staticcheck
 
     - path: doc.go
       linters:

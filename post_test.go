@@ -11,7 +11,6 @@ import (
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
-//nolint:staticcheck
 func TestClient_Post(t *testing.T) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},

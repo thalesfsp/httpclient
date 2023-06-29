@@ -5,7 +5,9 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"sync"
 	"time"
@@ -301,12 +303,22 @@ func (c *Client) request(
 	// Handles response body.
 	//////
 
+	//nolint:gocritic
 	if options.RespBody != nil {
-		if err := shared.Decode(resp.Body, options.RespBody); err != nil {
-			return resp, err
-		}
+		switch options.RespBody.(type) {
+		case *os.File:
+			// Write the response body to file
+			if _, err := io.Copy(options.RespBody.(*os.File), resp.Body); err != nil {
+				return resp, err
+			}
 
-		respFields["respBody"] = fmt.Sprintf("%+v", options.RespBody)
+		default:
+			if err := shared.Decode(resp.Body, options.RespBody); err != nil {
+				return resp, err
+			}
+
+			respFields["respBody"] = fmt.Sprintf("%+v", options.RespBody)
+		}
 	}
 
 	respFields["status"] = resp.StatusCode

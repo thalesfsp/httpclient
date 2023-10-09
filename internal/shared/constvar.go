@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// General Status Codes
+const (
+	StatusPending = 0
+	StatusActive  = 1
+	StatusDeleted = 99
+)
+
 //////
 // Environments.
 //////
@@ -40,6 +47,10 @@ const (
 	PackageName = "httpclient"
 )
 
+//////
+// HTTP methods.
+//////
+
 // HTTPMethod is the HTTP method.
 type HTTPMethod string
 
@@ -58,13 +69,6 @@ const (
 
 	// MethodDelete is the HTTP DELETE method.
 	MethodDelete HTTPMethod = http.MethodDelete
-)
-
-// General Status Codes
-const (
-	StatusPending = 0
-	StatusActive  = 1
-	StatusDeleted = 99
 )
 
 func (m HTTPMethod) String() string {

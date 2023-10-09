@@ -71,6 +71,11 @@ func (c *Client) GetName() string {
 	return c.Name
 }
 
+// GetClient returns the HTTP client.
+func (c *Client) GetClient() *http.Client {
+	return c.client
+}
+
 // SetName sets the HTTP client name.
 func (c *Client) SetName(name string) *Client {
 	c.Name = name

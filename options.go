@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/thalesfsp/customerror"
+	"github.com/thalesfsp/httpclient/internal/logging"
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
@@ -105,10 +106,15 @@ func WithReqBody(body interface{}) Func {
 		}
 
 		var bodyReader io.Reader
+
 		switch b := body.(type) {
 		case string:
+			logging.Get().Debuglnf("request body: %s", b)
+
 			bodyReader = strings.NewReader(b)
 		case io.Reader:
+			logging.Get().Debuglnf("request body: %+v", bodyReader)
+
 			bodyReader = b
 		default:
 			bodyBytes, err := shared.Marshal(body)
@@ -118,6 +124,8 @@ func WithReqBody(body interface{}) Func {
 					customerror.WithError(err),
 				)
 			}
+
+			logging.Get().Debuglnf("request body: %s", string(bodyBytes))
 
 			bodyReader = bytes.NewReader(bodyBytes)
 		}

@@ -16,6 +16,9 @@ type ParallelGetResult = []RequestResult
 
 // IHTTP is the interface for the HTTP client.
 type IHTTP interface {
+	// GetClient returns the underlying HTTP client.
+	GetClient() *http.Client
+
 	// Get returns a new GetRequest.
 	//
 	// NOTE: If `opt.RespBody` is provided, it will read and decode the body,

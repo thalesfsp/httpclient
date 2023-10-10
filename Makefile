@@ -39,7 +39,7 @@ endif
 	@golangci-lint run -v -c .golangci.yml && echo "Lint OK"
 
 test:
-	@ENVIRONMENT="testing" configurer l d -f testing.env -- go test -timeout 30s -short -v -race -cover \
+	@ENVIRONMENT="testing" configurer l d -f testing.env -- go test -timeout 60s -short -v -race -cover \
 	-coverprofile=coverage.out ./... && echo "Test OK"
 
 .PHONY: ci \

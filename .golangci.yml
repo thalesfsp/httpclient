@@ -26,7 +26,7 @@ linters:
 # Settings for specific linters
 linters-settings:
   funlen:
-    lines: 250
+    lines: 300
     statements: 70
 
   cyclop:

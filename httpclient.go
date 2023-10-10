@@ -223,8 +223,27 @@ func (c *Client) request(
 			c.counterFailed.Add(1)
 
 			// Resp isn't all the time available.
-			if resp != nil && resp.Status != "" {
-				respFields["status"] = resp.Status
+			if resp != nil {
+				if resp.Status != "" {
+					respFields["status"] = resp.Status
+				}
+
+				// Print the body if it's available.
+				if resp.Body != nil {
+					defer resp.Body.Close()
+
+					var body []byte
+
+					body, err := shared.ReadAll(resp.Body)
+					if err != nil {
+						c.GetLogger().Errorln(customerror.NewFailedToError(
+							fmt.Sprintf("read response body %s", url),
+							customerror.WithError(err),
+						))
+					}
+
+					respFields["respBody"] = string(body)
+				}
 			}
 
 			cE := customerror.NewFailedToError(

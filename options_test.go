@@ -3,6 +3,7 @@ package httpclient
 import (
 	"bytes"
 	"io"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -50,6 +51,14 @@ func TestWithReqBody(t *testing.T) {
 				return bytes.NewReader(bodyBytes)
 			}(),
 			err: nil,
+		},
+		{
+			name: "url.Values body",
+			body: url.Values{
+				"A": {"test"},
+			},
+			expected: strings.NewReader("A=test"),
+			err:      nil,
 		},
 	}
 	for _, tt := range tests {

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
 	"github.com/thalesfsp/customerror"
+
 	"github.com/thalesfsp/httpclient/internal/logging"
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
@@ -116,6 +118,17 @@ func WithReqBody(body interface{}) Func {
 			logging.Get().Debuglnf("request body: %+v", bodyReader)
 
 			bodyReader = b
+		case url.Values:
+			logging.Get().Debuglnf("request body: %s", b.Encode())
+
+			bodyReader = strings.NewReader(b.Encode())
+
+			// Initalize o.Headers if needed.
+			if o.Headers == nil {
+				o.Headers = make(map[string]string)
+			}
+
+			o.Headers["Content-Type"] = "application/x-www-form-urlencoded"
 		default:
 			bodyBytes, err := shared.Marshal(body)
 			if err != nil {

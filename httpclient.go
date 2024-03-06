@@ -14,14 +14,15 @@ import (
 
 	"github.com/eapache/go-resiliency/retrier"
 	"github.com/thalesfsp/customerror"
-	"github.com/thalesfsp/httpclient/internal/logging"
-	"github.com/thalesfsp/httpclient/internal/metrics"
-	"github.com/thalesfsp/httpclient/internal/shared"
 	"github.com/thalesfsp/status"
 	"github.com/thalesfsp/sypl"
 	"github.com/thalesfsp/sypl/fields"
 	"github.com/thalesfsp/sypl/level"
 	"github.com/thalesfsp/validation"
+
+	"github.com/thalesfsp/httpclient/internal/logging"
+	"github.com/thalesfsp/httpclient/internal/metrics"
+	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
 //////
@@ -398,56 +399,96 @@ func New(
 	retrierBackoffTimes int,
 ) (*Client, error) {
 	// Enforces IHTTP interface implementation.
-	var (
-		_      IHTTP = (*Client)(nil)
-		client *Client
-		errOut error
+	var _ IHTTP = (*Client)(nil)
+
+	logger := logging.Get().New(name).SetTags(shared.PackageName, name)
+
+	client := &Client{
+		client: &http.Client{
+			Timeout: timeout,
+		},
+
+		//////
+		// Request's metrics.
+		//////
+
+		counterFailed:  metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Failed, DefaultMetricCounterLabel)),
+		counterRetried: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Retried, DefaultMetricCounterLabel)),
+		counterSuccess: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Succeeded, DefaultMetricCounterLabel)),
+
+		Logger: logger,
+
+		Headers:                headers,
+		Name:                   name,
+		RetrierBackoffDuration: 1 * time.Second,
+		RetrierBackoffTimes:    3,
+	}
+
+	if retrierBackoffDuration > 0 {
+		client.RetrierBackoffDuration = retrierBackoffDuration
+	}
+
+	if retrierBackoffTimes > 0 {
+		client.RetrierBackoffTimes = retrierBackoffTimes
+	}
+
+	// Validate the HTTP client.
+	if err := validation.Validate(client); err != nil {
+		return nil, err
+	}
+
+	client.GetLogger().PrintlnWithOptions(
+		level.Debug,
+		fmt.Sprintf("%+v %s %s", client.GetName(), shared.PackageName, status.Created),
+		sypl.WithTags(shared.PackageName, status.Initialized.String(), client.GetName()),
 	)
 
+	return client, nil
+}
+
+// NewSingleton creates a new HTTP client, and sets it as the singleton.
+func NewSingleton(
+	name string,
+	headers map[string]string,
+	timeout time.Duration,
+	retrierBackoffDuration time.Duration,
+	retrierBackoffTimes int,
+) (*Client, error) {
+	var errOut error
+
 	once.Do(func() {
-		logger := logging.Get().New(name).SetTags(shared.PackageName, name)
-
-		client = &Client{
-			client: &http.Client{
-				Timeout: timeout,
-			},
-
-			//////
-			// Request's metrics.
-			//////
-
-			counterFailed:  metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Failed, DefaultMetricCounterLabel)),
-			counterRetried: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Retried, DefaultMetricCounterLabel)),
-			counterSuccess: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Succeeded, DefaultMetricCounterLabel)),
-
-			Logger: logger,
-
-			Headers:                headers,
-			Name:                   name,
-			RetrierBackoffDuration: 1 * time.Second,
-			RetrierBackoffTimes:    3,
-		}
-
-		if retrierBackoffDuration > 0 {
-			client.RetrierBackoffDuration = retrierBackoffDuration
-		}
-
-		if retrierBackoffTimes > 0 {
-			client.RetrierBackoffTimes = retrierBackoffTimes
-		}
-
-		// Validate the HTTP client.
-		if err := validation.Validate(client); err != nil {
+		c, err := New(
+			name,
+			headers,
+			timeout,
+			retrierBackoffDuration,
+			retrierBackoffTimes,
+		)
+		if err != nil {
 			errOut = err
 		}
 
-		client.GetLogger().PrintlnWithOptions(
-			level.Debug,
-			fmt.Sprintf("%+v %s %s", client.GetName(), shared.PackageName, status.Created),
-			sypl.WithTags(shared.PackageName, status.Initialized.String(), client.GetName()),
-		)
+		singleton = c
+	})
 
-		singleton = client
+	if errOut != nil {
+		return nil, errOut
+	}
+
+	return singleton, nil
+}
+
+// NewSingleton creates a new HTTP client, and sets it as the singleton.
+func NewDefaultSingleton(name string) (*Client, error) {
+	var errOut error
+
+	once.Do(func() {
+		c, err := NewDefault(name)
+		if err != nil {
+			errOut = err
+		}
+
+		singleton = c
 	})
 
 	if errOut != nil {
@@ -458,6 +499,11 @@ func New(
 }
 
 // NewDefault is like new, but uses the default values.
+//
+// Set the following headers:
+// Accept:       "*/*"
+// Content-Type: "application/json"
+// User-Agent:   "name"
 func NewDefault(name string) (*Client, error) {
 	return New(name, map[string]string{
 		"Accept":       "*/*",

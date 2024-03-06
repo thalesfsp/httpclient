@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
@@ -121,8 +122,7 @@ func TestClient_ParallelGet2(t *testing.T) {
 				urls = []string{tt.url}
 			}
 
-			_, err := NewDefault("parallelget2")
-
+			_, err := NewDefaultSingleton("parallelget2")
 			assert.NoError(t, err)
 
 			responses, errors := Get().ParallelGet(ctx, tt.args.opts, urls...)

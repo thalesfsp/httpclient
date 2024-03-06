@@ -159,8 +159,16 @@ func (c *Client) request(
 	//////
 
 	// From default headers.
-	for k, v := range c.Headers {
-		req.Header.Set(k, v)
+	if c.Headers != nil {
+		for k, v := range c.Headers {
+			req.Header.Set(k, v)
+		}
+
+		c.Logger.PrintlnWithOptions(
+			level.Trace,
+			fmt.Sprintf("default headers"),
+			sypl.WithField("headers", c.Headers),
+		)
 	}
 
 	// Per-request headers.
@@ -168,6 +176,12 @@ func (c *Client) request(
 		for k, v := range options.Headers {
 			req.Header.Set(k, v)
 		}
+
+		c.Logger.PrintlnWithOptions(
+			level.Trace,
+			fmt.Sprintf("per-request headers"),
+			sypl.WithField("headers", c.Headers),
+		)
 	}
 
 	//////
@@ -177,6 +191,10 @@ func (c *Client) request(
 	reqFields := fields.Fields{
 		"method": method,
 		"url":    url,
+	}
+
+	if options.Headers != nil {
+		reqFields["headers"] = req.Header
 	}
 
 	if options.ReqBody != nil {
@@ -319,6 +337,21 @@ func (c *Client) request(
 
 	// If 2xx neither 4xx, return an error with the status code.
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		if resp.Body != nil {
+			var body []byte
+
+			body, err := shared.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			return nil, customerror.NewFailedToError(
+				fmt.Sprintf("request errored %s", url),
+				customerror.WithStatusCode(resp.StatusCode),
+				customerror.WithError(errors.New(string(body))),
+			)
+		}
+
 		return nil, customerror.NewHTTPError(resp.StatusCode)
 	}
 

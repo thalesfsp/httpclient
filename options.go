@@ -127,8 +127,6 @@ func WithReqBody(body interface{}) Func {
 			if o.Headers == nil {
 				o.Headers = make(map[string]string)
 			}
-
-			o.Headers["Content-Type"] = "application/x-www-form-urlencoded"
 		default:
 			bodyBytes, err := shared.Marshal(body)
 			if err != nil {

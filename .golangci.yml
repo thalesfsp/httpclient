@@ -11,6 +11,7 @@ linters:
     - exhaustruct
     - gomnd
     - ireturn
+    - depguard
     # - godox
     # - wrapcheck
     # - exhaustivestruct

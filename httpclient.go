@@ -14,15 +14,14 @@ import (
 
 	"github.com/eapache/go-resiliency/retrier"
 	"github.com/thalesfsp/customerror"
+	"github.com/thalesfsp/httpclient/internal/logging"
+	"github.com/thalesfsp/httpclient/internal/metrics"
+	"github.com/thalesfsp/httpclient/internal/shared"
 	"github.com/thalesfsp/status"
 	"github.com/thalesfsp/sypl"
 	"github.com/thalesfsp/sypl/fields"
 	"github.com/thalesfsp/sypl/level"
 	"github.com/thalesfsp/validation"
-
-	"github.com/thalesfsp/httpclient/internal/logging"
-	"github.com/thalesfsp/httpclient/internal/metrics"
-	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
 //////
@@ -50,12 +49,12 @@ type Client struct {
 
 	Logger sypl.ISypl `json:"-" validate:"required"`
 
-	Headers map[string]string `json:"-" validate:"omitempty,gt=0"`
-	Name    string            `json:"name" validate:"required,lowercase,gte=1"`
+	Headers map[string]string `json:"-"       validate:"omitempty,gt=0"`
+	Name    string            `json:"name"    validate:"required,lowercase,gte=1"`
 	Timeout time.Duration     `json:"timeout" validate:"omitempty,gte=100ms"`
 
 	RetrierBackoffDuration time.Duration `json:"retrierBackoffDuration" validate:"omitempty,gte=100ms"`
-	RetrierBackoffTimes    int           `json:"retrierBackoffTimes" validate:"omitempty,gte=1"`
+	RetrierBackoffTimes    int           `json:"retrierBackoffTimes"    validate:"omitempty,gte=1"`
 }
 
 //////
@@ -102,7 +101,7 @@ func (c *Client) SetName(name string) *Client {
 // CLOSING IT. Otherwise, the body will be left open, and returned. In this case
 // IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
 //
-//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx
+//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx,gocyclo
 func (c *Client) request(
 	ctx context.Context,
 	method string,
@@ -166,7 +165,7 @@ func (c *Client) request(
 
 		c.Logger.PrintlnWithOptions(
 			level.Trace,
-			fmt.Sprintf("default headers"),
+			"default headers",
 			sypl.WithField("headers", c.Headers),
 		)
 	}
@@ -179,7 +178,7 @@ func (c *Client) request(
 
 		c.Logger.PrintlnWithOptions(
 			level.Trace,
-			fmt.Sprintf("per-request headers"),
+			"per-request headers",
 			sypl.WithField("headers", c.Headers),
 		)
 	}

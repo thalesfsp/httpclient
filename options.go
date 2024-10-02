@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/thalesfsp/customerror"
-
 	"github.com/thalesfsp/httpclient/internal/logging"
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
@@ -123,7 +122,7 @@ func WithReqBody(body interface{}) Func {
 
 			bodyReader = strings.NewReader(b.Encode())
 
-			// Initalize o.Headers if needed.
+			// Initialize o.Headers if needed.
 			if o.Headers == nil {
 				o.Headers = make(map[string]string)
 			}

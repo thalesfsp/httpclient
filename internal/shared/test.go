@@ -50,8 +50,8 @@ type TestDataS struct {
 	Version string `db:"version" dbType:"varchar(255)" json:"version,omitempty" query:"version"`
 }
 
-// TestDataWithIDS is the test data definition.
-type TestDataWithIDS struct {
+// TestDataWithIDs is the test data definition.
+type TestDataWithIDs struct {
 	ID      string `bson:"_id"   db:"id"               dbType:"varchar(255)"    json:"id,omitempty" query:"id"`
 	Name    string `db:"name"    dbType:"varchar(255)" json:"name,omitempty"    query:"name"`
 	Version string `db:"version" dbType:"varchar(255)" json:"version,omitempty" query:"version"`
@@ -65,7 +65,7 @@ var (
 	}
 
 	// TestDataWithID is the test data.
-	TestDataWithID = &TestDataWithIDS{
+	TestDataWithID = &TestDataWithIDs{
 		ID:      DocumentID,
 		Name:    DocumentName,
 		Version: DocumentVersion,
@@ -78,7 +78,7 @@ var (
 	}
 
 	// UpdatedTestDataID is the updated test data with ID.
-	UpdatedTestDataID = &TestDataWithIDS{
+	UpdatedTestDataID = &TestDataWithIDs{
 		ID:      DocumentID,
 		Name:    DocumentNameUpdated,
 		Version: DocumentVersion,

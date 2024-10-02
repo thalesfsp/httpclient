@@ -422,7 +422,7 @@ func IsRespSuccess(resp *http.Response) bool {
 // NOTE: Retrier use exponential backoff (e.g.: 1s -> 2s -> 4s). Be mindful:
 // `timeout` can't be less than the cumulative retrier time.
 //
-//nolint:lll
+//nolint:lll,mnd
 func New(
 	name string,
 	headers map[string]string,
@@ -545,6 +545,8 @@ func NewDefault(name string) (*Client, error) {
 }
 
 // Initialize setup the HTTP client. Use options to customize it.
+//
+//nolint:wsl
 func Initialize(opts ...ClientFunc) (*Client, error) {
 	//////
 	// Initialize and process options.

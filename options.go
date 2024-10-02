@@ -183,7 +183,7 @@ func WithClientName(name string) ClientFunc {
 
 // WithPrefix set the prefix of the HTTP metrics.
 func WithPrefix(prefix string) ClientFunc {
-	return func(o *ClientOptions) error {
+	return func(_ *ClientOptions) error {
 		os.Setenv("HTTPCLIENT_METRICS_PREFIX", prefix)
 
 		return nil

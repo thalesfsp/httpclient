@@ -12,16 +12,9 @@ linters:
     - gomnd
     - ireturn
     - depguard
-    # - godox
-    # - wrapcheck
-    # - exhaustivestruct
-    # - exhaustruct
-    # - tagliatelle
-    # - contextcheck
-    # - ireturn
-    # - noctx
-    # - gochecknoglobals
-    # - lll
+    - perfsprint
+    - testifylint
+    - err113
   fast: false
 
 # Settings for specific linters

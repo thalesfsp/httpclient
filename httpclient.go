@@ -2,13 +2,13 @@ package httpclient
 
 import (
 	"context"
-	"errors"
 	"expvar"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,11 +28,12 @@ import (
 // Vars, consts, and types.
 //////
 
+// DefaultMetricCounterLabel is the default metric counter label.
 const DefaultMetricCounterLabel = "counter"
 
 // Singleton.
 var (
-	httpRetrierRegex = regexp.MustCompile(`(?m)(429)|(5\d\d)`)
+	httpRetrierRegex = regexp.MustCompile(`(?m)^(408|429|5\d\d)$`)
 
 	once      sync.Once
 	singleton *Client
@@ -55,6 +56,54 @@ type Client struct {
 
 	RetrierBackoffDuration time.Duration `json:"retrierBackoffDuration" validate:"omitempty,gte=100ms"`
 	RetrierBackoffTimes    int           `json:"retrierBackoffTimes"    validate:"omitempty,gte=1"`
+}
+
+//////
+// Helpers.
+//////
+
+// HandleHTTPResponseError handles the HTTP response error.
+func HandleHTTPResponseError(
+	resp *http.Response,
+	url, msg string,
+	externalErr error,
+) error {
+	// Set the status code.
+	customerrorOptions := []customerror.Option{
+		customerror.WithField("url", url),
+	}
+
+	if externalErr != nil {
+		customerrorOptions = append(
+			customerrorOptions,
+			customerror.WithError(externalErr),
+		)
+	}
+
+	if resp != nil && resp.StatusCode > 0 {
+		customerrorOptions = append(
+			customerrorOptions,
+			customerror.WithStatusCode(resp.StatusCode),
+		)
+
+		// Optionally set the body.
+		if resp.Body != nil {
+			var body []byte
+
+			body, err := shared.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+
+			customerrorOptions = append(
+				customerrorOptions,
+				customerror.WithField("respBody", string(body)),
+			)
+		}
+	}
+
+	// Return the error.
+	return customerror.NewFailedToError(msg, customerrorOptions...)
 }
 
 //////
@@ -101,7 +150,7 @@ func (c *Client) SetName(name string) *Client {
 // CLOSING IT. Otherwise, the body will be left open, and returned. In this case
 // IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
 //
-//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx,gocyclo
+//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx
 func (c *Client) request(
 	ctx context.Context,
 	method string,
@@ -131,7 +180,7 @@ func (c *Client) request(
 	}
 
 	//////
-	// Create request.
+	// Create a request.
 	//////
 
 	req, err := http.NewRequestWithContext(ctx, method, url, options.reqBodyAsIOReader)
@@ -146,9 +195,21 @@ func (c *Client) request(
 	if len(options.QueryParams) > 0 {
 		q := req.URL.Query()
 
+		loggingOpts := []sypl.OptionFunc{
+			sypl.WithTags("query params"),
+		}
+
 		for k, v := range options.QueryParams {
 			q.Add(k, v)
+
+			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
+
+		c.GetLogger().PrintlnWithOptions(
+			level.Trace,
+			"query params",
+			loggingOpts...,
+		)
 
 		req.URL.RawQuery = q.Encode()
 	}
@@ -159,32 +220,44 @@ func (c *Client) request(
 
 	// From default headers.
 	if c.Headers != nil {
-		for k, v := range c.Headers {
-			req.Header.Set(k, v)
+		loggingOpts := []sypl.OptionFunc{
+			sypl.WithTags("default headers"),
 		}
 
-		c.Logger.PrintlnWithOptions(
+		for k, v := range c.Headers {
+			req.Header.Set(k, v)
+
+			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
+		}
+
+		c.GetLogger().PrintlnWithOptions(
 			level.Trace,
 			"default headers",
-			sypl.WithField("headers", c.Headers),
+			loggingOpts...,
 		)
 	}
 
 	// Per-request headers.
 	if options.Headers != nil {
-		for k, v := range options.Headers {
-			req.Header.Set(k, v)
+		loggingOpts := []sypl.OptionFunc{
+			sypl.WithTags("per-request headers"),
 		}
 
-		c.Logger.PrintlnWithOptions(
+		for k, v := range options.Headers {
+			req.Header.Set(k, v)
+
+			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
+		}
+
+		c.GetLogger().PrintlnWithOptions(
 			level.Trace,
 			"per-request headers",
-			sypl.WithField("headers", c.Headers),
+			loggingOpts...,
 		)
 	}
 
 	//////
-	// Setup log fields.
+	// Setup logging fields.
 	//////
 
 	reqFields := fields.Fields{
@@ -193,7 +266,7 @@ func (c *Client) request(
 	}
 
 	if options.Headers != nil {
-		reqFields["headers"] = req.Header
+		reqFields["reqHeaders"] = req.Header
 	}
 
 	if options.ReqBody != nil {
@@ -201,15 +274,15 @@ func (c *Client) request(
 	}
 
 	if req.URL.RawQuery != "" {
-		reqFields["queryParams"] = req.URL.RawQuery
+		reqFields["reqQueryParams"] = req.URL.RawQuery
 	}
 
 	// Request <-> Transaction <-> Log correlation.
 	reqFields = logging.ToAPM(ctx, reqFields)
 
-	c.Logger.PrintlnWithOptions(
-		level.Debug,
-		status.Created.String()+" request",
+	c.GetLogger().PrintlnWithOptions(
+		level.Trace,
+		"request "+status.Created.String(),
 		sypl.WithFields(reqFields),
 	)
 
@@ -226,8 +299,10 @@ func (c *Client) request(
 
 	r := retrier.New(
 		retrier.ExponentialBackoff(c.RetrierBackoffTimes, c.RetrierBackoffDuration),
+		// Automagically retries on 408, 429, and 5xx.
 		HTTPStatusCodeClassifier{
-			Regex: httpRetrierRegex,
+			Regex:  httpRetrierRegex,
+			Client: c,
 		},
 	)
 
@@ -236,132 +311,58 @@ func (c *Client) request(
 	if err := r.Run(func() error {
 		req.Close = true
 
-		resp, err = c.client.Do(req)
+		// WARN: A non-2xx status code doesn't cause an error!
+		respInternal, err := c.client.Do(req)
+		//////
+		// Deals with errored requests.
+		//////
 		if err != nil {
-			c.counterFailed.Add(1)
-
-			// Resp isn't all the time available.
-			if resp != nil {
-				if resp.Status != "" {
-					respFields["status"] = resp.Status
-				}
-
-				// Print the body if it's available.
-				if resp.Body != nil {
-					defer resp.Body.Close()
-
-					var body []byte
-
-					body, err := shared.ReadAll(resp.Body)
-					if err != nil {
-						c.GetLogger().Errorln(customerror.NewFailedToError(
-							fmt.Sprintf("read response body %s", url),
-							customerror.WithError(err),
-						))
-					}
-
-					respFields["respBody"] = string(body)
-				}
-			}
-
-			cE := customerror.NewFailedToError(
-				fmt.Sprintf("send request %s", url),
-				customerror.WithError(err),
-			)
-
-			c.GetLogger().PrintlnWithOptions(
-				level.Error,
-				cE.Error(),
-				sypl.WithFields(respFields),
-				sypl.WithTags("request"),
-			)
-
-			return cE
+			// Handle the error because it's an error, lol.
+			return HandleHTTPResponseError(respInternal, url, "request", err)
 		}
 
-		//////
-		// Handles HTTP status codes, and retries.
-		//////
+		if respInternal != nil && respInternal.StatusCode > 0 {
+			//////
+			// Deal with retryable requests.
+			//////
 
-		// 429 - Retry after at least 1 second; avoid bursts of requests
-		// 4xx - Do not retry
-		// 5xx - Retry 3 times with 5, 10, 15 second pause between retries.
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
-			c.counterRetried.Add(1)
-
-			var cE error
-
-			if resp.Body != nil {
-				var body []byte
-
-				body, err := shared.ReadAll(resp.Body)
-				if err != nil {
-					return err
-				}
-
-				cE = customerror.NewFailedToError(
-					fmt.Sprintf("request (%s). It may be %s, depending on the error and status code) %s",
-						http.StatusText(resp.StatusCode),
-						status.Retried,
-						url,
-					),
-					customerror.WithStatusCode(resp.StatusCode),
-					customerror.WithError(errors.New(string(body))),
-				)
-			} else {
-				cE = customerror.NewFailedToError(
-					fmt.Sprintf("request (%s). It may be %s, depending on the error and status code) %s",
-						http.StatusText(resp.StatusCode),
-						status.Retried,
-						url,
-					),
-					customerror.WithStatusCode(resp.StatusCode),
-				)
+			if httpRetrierRegex.MatchString(strconv.Itoa(respInternal.StatusCode)) {
+				// There's no error, but it's a retryable case.
+				return HandleHTTPResponseError(respInternal, url, "request", err)
 			}
 
-			c.GetLogger().PrintlnWithOptions(
-				level.Error,
-				cE.Error(),
-				sypl.WithFields(respFields),
-				sypl.WithTags("request"),
-			)
+			//////
+			// Deal with out-of-ban (non-2xx - 3xx) requests.
+			//////
 
-			return cE
+			// If 2xx neither 4xx, return an error with the status code.
+			if respInternal.StatusCode < http.StatusOK || respInternal.StatusCode >= http.StatusBadRequest {
+				// There's no error, it's non-retryable, and it's not 2xx. Just
+				// return a error.
+				return HandleHTTPResponseError(respInternal, url, "request", err)
+			}
 		}
 
+		c.GetLogger().PrintlnWithOptions(
+			level.Trace,
+			"request "+status.Succeeded.String(),
+			sypl.WithFields(reqFields),
+		)
+
+		resp = respInternal
+
+		// If did reach here, it's a successful 2xx request.
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-
-	// If 2xx neither 4xx, return an error with the status code.
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		if resp.Body != nil {
-			var body []byte
-
-			body, err := shared.ReadAll(resp.Body)
-			if err != nil {
-				return nil, err
-			}
-
-			return nil, customerror.NewFailedToError(
-				fmt.Sprintf("request errored %s", url),
-				customerror.WithStatusCode(resp.StatusCode),
-				customerror.WithError(errors.New(string(body))),
-			)
-		}
-
-		return nil, customerror.NewHTTPError(resp.StatusCode)
-	}
-
-	c.counterSuccess.Add(1)
 
 	//////
 	// Handles response body.
 	//////
 
 	//nolint:gocritic
-	if options.RespBody != nil {
+	if resp != nil && options.RespBody != nil && resp.Body != nil {
 		switch options.RespBody.(type) {
 		case *os.File:
 			// Write the response body to file
@@ -376,9 +377,14 @@ func (c *Client) request(
 
 			respFields["respBody"] = fmt.Sprintf("%+v", options.RespBody)
 		}
+
+		if resp.StatusCode > 0 {
+			respFields["respStatusCode"] = resp.StatusCode
+		}
 	}
 
-	respFields["status"] = resp.StatusCode
+	// Metrics
+	c.counterSuccess.Add(1)
 
 	c.GetLogger().PrintlnWithOptions(
 		level.Info,

@@ -11,7 +11,7 @@ import (
 	"github.com/thalesfsp/httpclient/internal/shared"
 )
 
-//nolint:bodyclose
+//nolint:bodyclose,intrange
 func TestClient_ParallelGet2(t *testing.T) {
 	type args struct {
 		opts []Func
@@ -113,6 +113,7 @@ func TestClient_ParallelGet2(t *testing.T) {
 			defer cancel()
 
 			urls := []string{}
+
 			for i := 0; i < tt.count; i++ {
 				urls = append(urls, server.URL)
 			}

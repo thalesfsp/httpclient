@@ -21,7 +21,7 @@ coverage:
 
 deps:
 	@go install golang.org/x/tools/cmd/godoc@latest
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.54.2
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 
 doc:
 ifndef HAS_GODOC

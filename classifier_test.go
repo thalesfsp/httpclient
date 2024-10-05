@@ -91,8 +91,8 @@ func TestHTTPStatusCodeClassifier_Classify(t *testing.T) {
 				Regex:       tt.fields.Regex,
 				StatusCodes: tt.fields.StatusCodes,
 			}
-			if got := hSCC.Classify(tt.args.err); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("HTTPStatusCodeClassifier.Classify() = %v, want %v", got, tt.want)
+			if err := hSCC.Classify(tt.args.err); !reflect.DeepEqual(err, tt.want) {
+				t.Errorf("HTTPStatusCodeClassifier.Classify() = %v, want %v", err, tt.want)
 			}
 		})
 	}

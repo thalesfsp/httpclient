@@ -14,9 +14,12 @@ import (
 type HTTPStatusCodeClassifier struct {
 	Regex       *regexp.Regexp
 	StatusCodes []int
+	Client      *Client
 }
 
 // Classify implements the Classifier interface.
+//
+//nolint:nestif
 func (hSCC HTTPStatusCodeClassifier) Classify(err error) retrier.Action {
 	// Should do nothing if there's no error.
 	if err == nil {
@@ -29,6 +32,10 @@ func (hSCC HTTPStatusCodeClassifier) Classify(err error) retrier.Action {
 		// Should retry if regex match the error's status code.
 		if hSCC.Regex != nil {
 			if hSCC.Regex.MatchString(strconv.Itoa(cE.StatusCode)) {
+				if hSCC.Client != nil {
+					hSCC.Client.counterRetried.Add(1)
+				}
+
 				return retrier.Retry
 			}
 		}
@@ -36,9 +43,17 @@ func (hSCC HTTPStatusCodeClassifier) Classify(err error) retrier.Action {
 		// Should retry if status code is in the list.
 		for _, statusCode := range hSCC.StatusCodes {
 			if cE.StatusCode == statusCode {
+				if hSCC.Client != nil {
+					hSCC.Client.counterRetried.Add(1)
+				}
+
 				return retrier.Retry
 			}
 		}
+	}
+
+	if hSCC.Client != nil {
+		hSCC.Client.counterFailed.Add(1)
 	}
 
 	// Should fail if it isn't of the type `CustomError`, and everything else.

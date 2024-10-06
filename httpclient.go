@@ -387,7 +387,7 @@ func (c *Client) request(
 	c.counterSuccess.Add(1)
 
 	c.GetLogger().PrintlnWithOptions(
-		level.Info,
+		level.Trace,
 		"request "+status.Succeeded.String(),
 		sypl.WithFields(respFields),
 		sypl.WithTags("request"),
@@ -476,7 +476,7 @@ func New(
 	}
 
 	client.GetLogger().PrintlnWithOptions(
-		level.Debug,
+		level.Trace,
 		fmt.Sprintf("%+v %s %s", client.GetName(), shared.PackageName, status.Created),
 		sypl.WithTags(shared.PackageName, status.Initialized.String(), client.GetName()),
 	)

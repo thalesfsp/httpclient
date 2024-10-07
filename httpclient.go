@@ -1,3 +1,4 @@
+//nolint:lll,wsl,mnd
 package httpclient
 
 import (
@@ -24,26 +25,19 @@ import (
 	"github.com/thalesfsp/validation"
 )
 
-//////
-// Vars, consts, and types.
-//////
-
 // DefaultMetricCounterLabel is the default metric counter label.
 const DefaultMetricCounterLabel = "counter"
 
-// Singleton.
 var (
 	httpRetrierRegex = regexp.MustCompile(`(?m)^(408|429|5\d\d)$`)
-
-	once      sync.Once
-	singleton *Client
+	once             sync.Once
+	singleton        *Client
 )
 
 // Client is the application pre-configured HTTP client.
 type Client struct {
 	client *http.Client
 
-	// Request's metrics.
 	counterFailed  *expvar.Int `json:"-" validate:"required,gte=0"`
 	counterRetried *expvar.Int `json:"-" validate:"required,gte=0"`
 	counterSuccess *expvar.Int `json:"-" validate:"required,gte=0"`
@@ -58,57 +52,30 @@ type Client struct {
 	RetrierBackoffTimes    int           `json:"retrierBackoffTimes"    validate:"omitempty,gte=1"`
 }
 
-//////
-// Helpers.
-//////
-
 // HandleHTTPResponseError handles the HTTP response error.
-func HandleHTTPResponseError(
-	resp *http.Response,
-	url, msg string,
-	externalErr error,
-) error {
-	// Set the status code.
+func HandleHTTPResponseError(resp *http.Response, url, msg string, externalErr error) error {
 	customerrorOptions := []customerror.Option{
 		customerror.WithField("url", url),
 	}
 
 	if externalErr != nil {
-		customerrorOptions = append(
-			customerrorOptions,
-			customerror.WithError(externalErr),
-		)
+		customerrorOptions = append(customerrorOptions, customerror.WithError(externalErr))
 	}
 
 	if resp != nil && resp.StatusCode > 0 {
-		customerrorOptions = append(
-			customerrorOptions,
-			customerror.WithStatusCode(resp.StatusCode),
-		)
+		customerrorOptions = append(customerrorOptions, customerror.WithStatusCode(resp.StatusCode))
 
-		// Optionally set the body.
 		if resp.Body != nil {
-			var body []byte
-
 			body, err := shared.ReadAll(resp.Body)
 			if err != nil {
 				return err
 			}
-
-			customerrorOptions = append(
-				customerrorOptions,
-				customerror.WithField("respBody", string(body)),
-			)
+			customerrorOptions = append(customerrorOptions, customerror.WithField("respBody", string(body)))
 		}
 	}
 
-	// Return the error.
 	return customerror.NewFailedToError(msg, customerrorOptions...)
 }
-
-//////
-// Implements the IMeta interface.
-//////
 
 // GetLogger returns the logger.
 func (c *Client) GetLogger() sypl.ISypl {
@@ -132,134 +99,126 @@ func (c *Client) SetName(name string) *Client {
 	return c
 }
 
-//////
-// Methods.
-//////
-
-// request is the base request.
-//
-// For `body`, optionally pass a `struct`.
-// For `headers`, optionally pass a `map[string]string`.
-// For `query params`, optionally pass a `map[string]string`.
-//
-// It throws custom errors, and handle retries, metrics, and logging.
-//
-// NOTE: Per-request timeout is achieved by using `context.WithTimeout`.
-//
-// NOTE: If `respBody` is provided, it will read and decode the body, ALSO
-// CLOSING IT. Otherwise, the body will be left open, and returned. In this case
-// IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
-//
-//nolint:gocognit,goerr113,bodyclose,cyclop,maintidx
-func (c *Client) request(
-	ctx context.Context,
-	method string,
-	url string,
-	o ...Func,
-) (*http.Response, error) {
-	// Basic validation.
+// request is the base request method.
+func (c *Client) request(ctx context.Context, method string, url string, o ...Func) (*http.Response, error) {
 	if method == "" || url == "" {
 		return nil, customerror.NewRequiredError("method and url are")
 	}
 
-	// Initialize the options.
 	options := &Options{
 		Headers:     make(map[string]string),
 		QueryParams: make(map[string]string),
-		ReqBody:     nil,
-		RespBody:    nil,
-
-		reqBodyAsIOReader: nil,
 	}
 
-	// Applies options.
 	for _, opt := range o {
 		if err := opt(options); err != nil {
 			return nil, err
 		}
 	}
 
-	//////
-	// Create a request.
-	//////
-
 	req, err := http.NewRequestWithContext(ctx, method, url, options.reqBodyAsIOReader)
 	if err != nil {
 		return nil, customerror.NewFailedToError("create request", customerror.WithError(err))
 	}
 
-	//////
-	// Setup query params.
-	//////
+	c.setQueryParams(req, options.QueryParams)
+	c.setHeaders(req, options.Headers)
 
-	if len(options.QueryParams) > 0 {
-		q := req.URL.Query()
+	reqFields := c.prepareRequestFields(method, url, req, options)
+	respFields := make(fields.Fields, len(reqFields))
+	for k, v := range reqFields {
+		respFields[k] = v
+	}
 
-		loggingOpts := []sypl.OptionFunc{
-			sypl.WithTags("query params"),
+	c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Created.String(), sypl.WithFields(reqFields))
+
+	r := retrier.New(
+		retrier.ExponentialBackoff(c.RetrierBackoffTimes, c.RetrierBackoffDuration),
+		HTTPStatusCodeClassifier{Regex: httpRetrierRegex, Client: c},
+	)
+
+	var resp *http.Response
+	err = r.Run(func() error {
+		req.Close = true
+
+		respInternal, err := c.client.Do(req)
+		if err != nil {
+			return HandleHTTPResponseError(respInternal, url, "request", err)
 		}
 
-		for k, v := range options.QueryParams {
-			q.Add(k, v)
+		if respInternal != nil && respInternal.StatusCode > 0 {
+			if httpRetrierRegex.MatchString(strconv.Itoa(respInternal.StatusCode)) {
+				respInternal.Body.Close() // Close the body before returning the error
 
+				return HandleHTTPResponseError(respInternal, url, "request", err)
+			}
+
+			if respInternal.StatusCode < http.StatusOK || respInternal.StatusCode >= http.StatusBadRequest {
+				respInternal.Body.Close() // Close the body before returning the error
+
+				return HandleHTTPResponseError(respInternal, url, "request", err)
+			}
+		}
+
+		c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(reqFields))
+
+		resp = respInternal
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if resp != nil && options.RespBody != nil && resp.Body != nil {
+		defer resp.Body.Close()
+		if err := c.handleResponseBody(resp, options.RespBody, &respFields); err != nil {
+			return nil, err
+		}
+	}
+
+	c.counterSuccess.Add(1)
+	c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(respFields), sypl.WithTags("request"))
+
+	return resp, nil
+}
+
+func (c *Client) setQueryParams(req *http.Request, queryParams map[string]string) {
+	if len(queryParams) > 0 {
+		q := req.URL.Query()
+		loggingOpts := []sypl.OptionFunc{sypl.WithTags("query params")}
+
+		for k, v := range queryParams {
+			q.Add(k, v)
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
 
-		c.GetLogger().PrintlnWithOptions(
-			level.Trace,
-			"query params",
-			loggingOpts...,
-		)
-
+		c.GetLogger().PrintlnWithOptions(level.Trace, "query params", loggingOpts...)
 		req.URL.RawQuery = q.Encode()
 	}
+}
 
-	//////
-	// Setup headers.
-	//////
-
-	// From default headers.
+func (c *Client) setHeaders(req *http.Request, headers map[string]string) {
 	if c.Headers != nil {
-		loggingOpts := []sypl.OptionFunc{
-			sypl.WithTags("default headers"),
-		}
-
+		loggingOpts := []sypl.OptionFunc{sypl.WithTags("default headers")}
 		for k, v := range c.Headers {
 			req.Header.Set(k, v)
-
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
-
-		c.GetLogger().PrintlnWithOptions(
-			level.Trace,
-			"default headers",
-			loggingOpts...,
-		)
+		c.GetLogger().PrintlnWithOptions(level.Trace, "default headers", loggingOpts...)
 	}
 
-	// Per-request headers.
-	if options.Headers != nil {
-		loggingOpts := []sypl.OptionFunc{
-			sypl.WithTags("per-request headers"),
-		}
-
-		for k, v := range options.Headers {
+	if headers != nil {
+		loggingOpts := []sypl.OptionFunc{sypl.WithTags("per-request headers")}
+		for k, v := range headers {
 			req.Header.Set(k, v)
-
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
-
-		c.GetLogger().PrintlnWithOptions(
-			level.Trace,
-			"per-request headers",
-			loggingOpts...,
-		)
+		c.GetLogger().PrintlnWithOptions(level.Trace, "per-request headers", loggingOpts...)
 	}
+}
 
-	//////
-	// Setup logging fields.
-	//////
-
+func (c *Client) prepareRequestFields(method, url string, req *http.Request, options *Options) fields.Fields {
 	reqFields := fields.Fields{
 		"method": method,
 		"url":    url,
@@ -277,128 +236,28 @@ func (c *Client) request(
 		reqFields["reqQueryParams"] = req.URL.RawQuery
 	}
 
-	// Request <-> Transaction <-> Log correlation.
-	reqFields = logging.ToAPM(ctx, reqFields)
-
-	c.GetLogger().PrintlnWithOptions(
-		level.Trace,
-		"request "+status.Created.String(),
-		sypl.WithFields(reqFields),
-	)
-
-	// Copy reqFields to respFields.
-	respFields := make(fields.Fields, len(reqFields))
-
-	for k, v := range reqFields {
-		respFields[k] = v
-	}
-
-	//////
-	// Send request.
-	//////
-
-	r := retrier.New(
-		retrier.ExponentialBackoff(c.RetrierBackoffTimes, c.RetrierBackoffDuration),
-		// Automagically retries on 408, 429, and 5xx.
-		HTTPStatusCodeClassifier{
-			Regex:  httpRetrierRegex,
-			Client: c,
-		},
-	)
-
-	var resp *http.Response
-
-	if err := r.Run(func() error {
-		req.Close = true
-
-		// WARN: A non-2xx status code doesn't cause an error!
-		respInternal, err := c.client.Do(req)
-		//////
-		// Deals with errored requests.
-		//////
-		if err != nil {
-			// Handle the error because it's an error, lol.
-			return HandleHTTPResponseError(respInternal, url, "request", err)
-		}
-
-		if respInternal != nil && respInternal.StatusCode > 0 {
-			//////
-			// Deal with retryable requests.
-			//////
-
-			if httpRetrierRegex.MatchString(strconv.Itoa(respInternal.StatusCode)) {
-				// There's no error, but it's a retryable case.
-				return HandleHTTPResponseError(respInternal, url, "request", err)
-			}
-
-			//////
-			// Deal with out-of-ban (non-2xx - 3xx) requests.
-			//////
-
-			// If 2xx neither 4xx, return an error with the status code.
-			if respInternal.StatusCode < http.StatusOK || respInternal.StatusCode >= http.StatusBadRequest {
-				// There's no error, it's non-retryable, and it's not 2xx. Just
-				// return a error.
-				return HandleHTTPResponseError(respInternal, url, "request", err)
-			}
-		}
-
-		c.GetLogger().PrintlnWithOptions(
-			level.Trace,
-			"request "+status.Succeeded.String(),
-			sypl.WithFields(reqFields),
-		)
-
-		resp = respInternal
-
-		// If did reach here, it's a successful 2xx request.
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	//////
-	// Handles response body.
-	//////
-
-	//nolint:gocritic
-	if resp != nil && options.RespBody != nil && resp.Body != nil {
-		switch options.RespBody.(type) {
-		case *os.File:
-			// Write the response body to file
-			if _, err := io.Copy(options.RespBody.(*os.File), resp.Body); err != nil {
-				return resp, err
-			}
-
-		default:
-			if err := shared.Decode(resp.Body, options.RespBody); err != nil {
-				return resp, err
-			}
-
-			respFields["respBody"] = fmt.Sprintf("%+v", options.RespBody)
-		}
-
-		if resp.StatusCode > 0 {
-			respFields["respStatusCode"] = resp.StatusCode
-		}
-	}
-
-	// Metrics
-	c.counterSuccess.Add(1)
-
-	c.GetLogger().PrintlnWithOptions(
-		level.Trace,
-		"request "+status.Succeeded.String(),
-		sypl.WithFields(respFields),
-		sypl.WithTags("request"),
-	)
-
-	return resp, nil
+	return logging.ToAPM(req.Context(), reqFields)
 }
 
-//////
-// Exported functionalities.
-//////
+func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields *fields.Fields) error {
+	switch v := respBody.(type) {
+	case *os.File:
+		if _, err := io.Copy(v, resp.Body); err != nil {
+			return err
+		}
+	default:
+		if err := shared.Decode(resp.Body, respBody); err != nil {
+			return err
+		}
+		(*respFields)["respBody"] = fmt.Sprintf("%+v", respBody)
+	}
+
+	if resp.StatusCode > 0 {
+		(*respFields)["respStatusCode"] = resp.StatusCode
+	}
+
+	return nil
+}
 
 // Get creates a new HTTP client, otherwise returns it.
 func Get() *Client {
@@ -414,63 +273,32 @@ func IsRespSuccess(resp *http.Response) bool {
 	return resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 }
 
-//////
-// Factory.
-//////
-
-// New creates a new HTTP client. Default values:
-// - Timeout: 30s
-// - Retrier Times: 3x
-// - Retrier Initial Time: 1s
-//
-// NOTE: `headers` sets default headers for all requests.
-//
-// NOTE: Retrier use exponential backoff (e.g.: 1s -> 2s -> 4s). Be mindful:
-// `timeout` can't be less than the cumulative retrier time.
-//
-//nolint:lll,mnd
-func New(
-	name string,
-	headers map[string]string,
-	timeout time.Duration,
-	retrierBackoffDuration time.Duration,
-	retrierBackoffTimes int,
-) (*Client, error) {
-	// Enforces IHTTP interface implementation.
-	var _ IHTTP = (*Client)(nil)
-
+// New creates a new HTTP client.
+func New(name string, headers map[string]string, timeout time.Duration, retrierBackoffDuration time.Duration, retrierBackoffTimes int) (*Client, error) {
 	logger := logging.Get().New(name).SetTags(shared.PackageName, name)
 
 	client := &Client{
 		client: &http.Client{
 			Timeout: timeout,
 		},
-
-		//////
-		// Request's metrics.
-		//////
-
-		counterFailed:  metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Failed, DefaultMetricCounterLabel)),
-		counterRetried: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Retried, DefaultMetricCounterLabel)),
-		counterSuccess: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Succeeded, DefaultMetricCounterLabel)),
-
-		Logger: logger,
-
+		counterFailed:          metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Failed, DefaultMetricCounterLabel)),
+		counterRetried:         metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Retried, DefaultMetricCounterLabel)),
+		counterSuccess:         metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Succeeded, DefaultMetricCounterLabel)),
+		Logger:                 logger,
 		Headers:                headers,
 		Name:                   name,
-		RetrierBackoffDuration: 1 * time.Second,
-		RetrierBackoffTimes:    3,
+		RetrierBackoffDuration: retrierBackoffDuration,
+		RetrierBackoffTimes:    retrierBackoffTimes,
 	}
 
-	if retrierBackoffDuration > 0 {
-		client.RetrierBackoffDuration = retrierBackoffDuration
+	if retrierBackoffDuration == 0 {
+		client.RetrierBackoffDuration = time.Second
 	}
 
-	if retrierBackoffTimes > 0 {
-		client.RetrierBackoffTimes = retrierBackoffTimes
+	if retrierBackoffTimes == 0 {
+		client.RetrierBackoffTimes = 3
 	}
 
-	// Validate the HTTP client.
 	if err := validation.Validate(client); err != nil {
 		return nil, err
 	}
@@ -485,30 +313,19 @@ func New(
 }
 
 // NewSingleton creates a new HTTP client, and sets it as the singleton.
-func NewSingleton(
-	name string,
-	headers map[string]string,
-	timeout time.Duration,
-	retrierBackoffDuration time.Duration,
-	retrierBackoffTimes int,
-) (*Client, error) {
+func NewSingleton(name string, headers map[string]string, timeout time.Duration, retrierBackoffDuration time.Duration, retrierBackoffTimes int) (*Client, error) {
 	var errOut error
 
 	once.Do(func() {
-		c, err := New(
-			name,
-			headers,
-			timeout,
-			retrierBackoffDuration,
-			retrierBackoffTimes,
-		)
+		c, err := New(name, headers, timeout, retrierBackoffDuration, retrierBackoffTimes)
 		if err != nil {
 			errOut = err
+
+			return
 		}
 
 		singleton = c
 	})
-
 	if errOut != nil {
 		return nil, errOut
 	}
@@ -516,7 +333,7 @@ func NewSingleton(
 	return singleton, nil
 }
 
-// NewSingleton creates a new HTTP client, and sets it as the singleton.
+// NewDefaultSingleton creates a new default HTTP client, and sets it as the singleton.
 func NewDefaultSingleton(name string) (*Client, error) {
 	var errOut error
 
@@ -524,11 +341,12 @@ func NewDefaultSingleton(name string) (*Client, error) {
 		c, err := NewDefault(name)
 		if err != nil {
 			errOut = err
+
+			return
 		}
 
 		singleton = c
 	})
-
 	if errOut != nil {
 		return nil, errOut
 	}
@@ -537,27 +355,16 @@ func NewDefaultSingleton(name string) (*Client, error) {
 }
 
 // NewDefault is like new, but uses the default values.
-//
-// Set the following headers:
-// Accept:       "*/*"
-// Content-Type: "application/json"
-// User-Agent:   "name"
 func NewDefault(name string) (*Client, error) {
 	return New(name, map[string]string{
 		"Accept":       "*/*",
 		"Content-Type": "application/json",
 		"User-Agent":   name,
-	}, 0, 0, 0)
+	}, 30*time.Second, time.Second, 3)
 }
 
 // Initialize setup the HTTP client. Use options to customize it.
-//
-//nolint:wsl
 func Initialize(opts ...ClientFunc) (*Client, error) {
-	//////
-	// Initialize and process options.
-	//////
-
 	options := &ClientOptions{}
 
 	for _, opt := range opts {

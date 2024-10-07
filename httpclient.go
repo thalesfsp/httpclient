@@ -1,7 +1,8 @@
-//nolint:lll,wsl,mnd
+//nolint:mnd,lll
 package httpclient
 
 import (
+	"bytes"
 	"context"
 	"expvar"
 	"fmt"
@@ -68,9 +69,16 @@ func HandleHTTPResponseError(resp *http.Response, url, msg string, externalErr e
 		if resp.Body != nil {
 			body, err := shared.ReadAll(resp.Body)
 			if err != nil {
+				resp.Body.Close() // Ensure body is closed even if read fails
+
 				return err
 			}
+
 			customerrorOptions = append(customerrorOptions, customerror.WithField("respBody", string(body)))
+
+			resp.Body.Close() // Close body after reading
+
+			resp.Body = io.NopCloser(bytes.NewBuffer(body)) // Reset body for potential further use
 		}
 	}
 
@@ -122,10 +130,13 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	}
 
 	c.setQueryParams(req, options.QueryParams)
+
 	c.setHeaders(req, options.Headers)
 
 	reqFields := c.prepareRequestFields(method, url, req, options)
+
 	respFields := make(fields.Fields, len(reqFields))
+
 	for k, v := range reqFields {
 		respFields[k] = v
 	}
@@ -138,6 +149,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	)
 
 	var resp *http.Response
+
 	err = r.Run(func() error {
 		req.Close = true
 
@@ -171,13 +183,15 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	}
 
 	if resp != nil && options.RespBody != nil && resp.Body != nil {
-		defer resp.Body.Close()
 		if err := c.handleResponseBody(resp, options.RespBody, &respFields); err != nil {
+			resp.Body.Close() // Ensure body is closed if handling fails
+
 			return nil, err
 		}
 	}
 
 	c.counterSuccess.Add(1)
+
 	c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(respFields), sypl.WithTags("request"))
 
 	return resp, nil
@@ -186,14 +200,17 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 func (c *Client) setQueryParams(req *http.Request, queryParams map[string]string) {
 	if len(queryParams) > 0 {
 		q := req.URL.Query()
+
 		loggingOpts := []sypl.OptionFunc{sypl.WithTags("query params")}
 
 		for k, v := range queryParams {
 			q.Add(k, v)
+
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
 
 		c.GetLogger().PrintlnWithOptions(level.Trace, "query params", loggingOpts...)
+
 		req.URL.RawQuery = q.Encode()
 	}
 }
@@ -201,19 +218,25 @@ func (c *Client) setQueryParams(req *http.Request, queryParams map[string]string
 func (c *Client) setHeaders(req *http.Request, headers map[string]string) {
 	if c.Headers != nil {
 		loggingOpts := []sypl.OptionFunc{sypl.WithTags("default headers")}
+
 		for k, v := range c.Headers {
 			req.Header.Set(k, v)
+
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
+
 		c.GetLogger().PrintlnWithOptions(level.Trace, "default headers", loggingOpts...)
 	}
 
 	if headers != nil {
 		loggingOpts := []sypl.OptionFunc{sypl.WithTags("per-request headers")}
+
 		for k, v := range headers {
 			req.Header.Set(k, v)
+
 			loggingOpts = append(loggingOpts, sypl.WithField(k, v))
 		}
+
 		c.GetLogger().PrintlnWithOptions(level.Trace, "per-request headers", loggingOpts...)
 	}
 }
@@ -240,17 +263,35 @@ func (c *Client) prepareRequestFields(method, url string, req *http.Request, opt
 }
 
 func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields *fields.Fields) error {
+	defer resp.Body.Close() // Ensure body is always closed after handling
+
+	var (
+		bodyBytes []byte
+		err       error
+	)
+
 	switch v := respBody.(type) {
 	case *os.File:
-		if _, err := io.Copy(v, resp.Body); err != nil {
-			return err
-		}
+		_, err = io.Copy(v, resp.Body)
 	default:
-		if err := shared.Decode(resp.Body, respBody); err != nil {
+		bodyBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
 			return err
 		}
+
+		if err := shared.Decode(bytes.NewReader(bodyBytes), respBody); err != nil {
+			return err
+		}
+
 		(*respFields)["respBody"] = fmt.Sprintf("%+v", respBody)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	// Reset the body for potential further use
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	if resp.StatusCode > 0 {
 		(*respFields)["respStatusCode"] = resp.StatusCode
@@ -326,6 +367,7 @@ func NewSingleton(name string, headers map[string]string, timeout time.Duration,
 
 		singleton = c
 	})
+
 	if errOut != nil {
 		return nil, errOut
 	}
@@ -347,6 +389,7 @@ func NewDefaultSingleton(name string) (*Client, error) {
 
 		singleton = c
 	})
+
 	if errOut != nil {
 		return nil, errOut
 	}

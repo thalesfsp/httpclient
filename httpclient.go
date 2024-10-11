@@ -35,6 +35,9 @@ import (
 // It is used when initializing expvar.Int counters for tracking request metrics.
 const DefaultMetricCounterLabel = "counter"
 
+// Type of the entity.
+const Type = "httpclient"
+
 // httpRetrierRegex is a regular expression that matches HTTP status codes
 // indicating that a request should be retried. Specifically, it matches:
 // - 408 (Request Timeout)

@@ -45,6 +45,13 @@ issues:
         - wsl
         - nestif
 
+    - path: errorcatalog.go
+      linters:
+        - lll
+        - funlen
+        - gocyclo
+        - cyclop
+
     - path: postgres.go
       linters:
         - gci

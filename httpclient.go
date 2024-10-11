@@ -104,21 +104,18 @@ func HandleHTTPResponseError(resp *http.Response, url, msg string, externalErr e
 
 		// If the response body is available, read and include it in the error.
 		if resp.Body != nil {
+			// Ensure the response body will be closed.
+			defer resp.Body.Close()
+
 			// Read the entire response body.
 			body, err := shared.ReadAll(resp.Body)
-			if err != nil {
-				resp.Body.Close() // Ensure the body is closed even if read fails.
+			if err == nil {
+				// Include the response body in the error context.
+				customerrorOptions = append(customerrorOptions, customerror.WithField("respBody", string(body)))
 
-				return err // Return the error encountered while reading.
+				// Reset the response body so it can be read again if necessary.
+				resp.Body = io.NopCloser(bytes.NewBuffer(body))
 			}
-
-			// Include the response body in the error context.
-			customerrorOptions = append(customerrorOptions, customerror.WithField("respBody", string(body)))
-
-			resp.Body.Close() // Close the body after reading.
-
-			// Reset the response body so it can be read again if necessary.
-			resp.Body = io.NopCloser(bytes.NewBuffer(body))
 		}
 	}
 
@@ -231,15 +228,11 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 
 			// If the status code matches retryable codes, trigger a retry.
 			if httpRetrierRegex.MatchString(statusCodeStr) {
-				respInternal.Body.Close() // Close the body before returning the error.
-
 				return HandleHTTPResponseError(respInternal, url, "request", err)
 			}
 
 			// If the status code is not in the 2xx range, handle as an error.
 			if respInternal.StatusCode < http.StatusOK || respInternal.StatusCode >= http.StatusBadRequest {
-				respInternal.Body.Close() // Close the body before returning the error.
-
 				return HandleHTTPResponseError(respInternal, url, "request", err)
 			}
 		}
@@ -257,8 +250,6 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	// If a response body is expected and available, process it.
 	if resp != nil && options.RespBody != nil && resp.Body != nil {
 		if err := c.handleResponseBody(resp, options.RespBody, &respFields); err != nil {
-			resp.Body.Close() // Ensure the body is closed if processing fails.
-
 			return nil, err // Return the error encountered.
 		}
 	}
@@ -377,7 +368,8 @@ func (c *Client) prepareRequestFields(method, url string, req *http.Request, opt
 // Returns:
 // - An error if any occurs during processing.
 func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields *fields.Fields) error {
-	defer resp.Body.Close() // Ensure the response body is always closed after processing.
+	// Ensure the response body will be closed.
+	defer resp.Body.Close()
 
 	var bodyBytes []byte // Variable to hold the response body bytes.
 

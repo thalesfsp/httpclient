@@ -215,7 +215,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	var resp *http.Response // Variable to hold the response.
 
 	// Execute the request with retry logic.
-	err = r.Run(func() error {
+	if err := r.Run(func() error {
 		req.Close = true // Ensure the connection is closed after the request.
 
 		// Perform the HTTP request.
@@ -250,8 +250,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 		resp = respInternal // Assign the successful response.
 
 		return nil // Return nil to indicate success.
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err // Return any error encountered during retries.
 	}
 
@@ -380,19 +379,18 @@ func (c *Client) prepareRequestFields(method, url string, req *http.Request, opt
 func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields *fields.Fields) error {
 	defer resp.Body.Close() // Ensure the response body is always closed after processing.
 
-	var (
-		bodyBytes []byte // Variable to hold the response body bytes.
-		err       error  // Variable to hold any error encountered.
-	)
+	var bodyBytes []byte // Variable to hold the response body bytes.
 
 	// Determine how to handle the response body based on the type of respBody.
 	switch v := respBody.(type) {
 	case *os.File:
 		// If respBody is a file, write the response body directly to the file.
-		_, err = io.Copy(v, resp.Body)
+		if _, err := io.Copy(v, resp.Body); err != nil {
+			return err // Return error if writing fails.
+		}
 	default:
 		// For other types, read the entire response body.
-		bodyBytes, err = io.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err // Return error if reading fails.
 		}
@@ -404,10 +402,6 @@ func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, r
 
 		// Include the response body in the logging fields.
 		(*respFields)["respBody"] = fmt.Sprintf("%+v", respBody)
-	}
-
-	if err != nil {
-		return err // Return any error encountered during processing.
 	}
 
 	// Reset the response body so it can be read again if necessary.

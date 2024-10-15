@@ -608,3 +608,14 @@ func Initialize(opts ...ClientFunc) (*Client, error) {
 
 	return NewDefault(options.Name) // Create a default client with the specified or generated name.
 }
+
+// MustNewDefault creates a new default Client instance and panics if
+// initialization fails.
+func MustNewDefault(name string) *Client {
+	c, err := NewDefault(name)
+	if err != nil {
+		panic(err)
+	}
+
+	return c
+}

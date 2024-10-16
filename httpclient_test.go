@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -30,12 +31,12 @@ func TestIsRespSuccess(t *testing.T) {
 	}
 }
 
-func TestInitialize_withOptions(t *testing.T) {
+func TestNewDefault_withOptions(t *testing.T) {
 	once = sync.Once{}
 
-	got, err := Initialize(WithClientName("testclientname"), WithPrefix("testprefix"))
+	got, err := NewDefault(WithClientName("testclientname"), WithPrefix("testprefix"))
 	if err != nil {
-		t.Fatalf("Initialize() error = %v", err)
+		t.Fatalf("NewDefault() error = %v", err)
 	}
 
 	name := got.GetName()
@@ -44,12 +45,12 @@ func TestInitialize_withOptions(t *testing.T) {
 	assert.Equal(t, name, "testclientname")
 }
 
-func TestInitialize(t *testing.T) {
+func TestNewDefault(t *testing.T) {
 	once = sync.Once{}
 
-	got, err := Initialize()
+	got, err := NewDefault()
 	if err != nil {
-		t.Fatalf("Initialize() error = %v", err)
+		t.Fatalf("NewDefault() error = %v", err)
 	}
 
 	name := got.GetName()
@@ -57,4 +58,28 @@ func TestInitialize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, name, "httpclient")
 	assert.Len(t, name, 47)
+}
+
+func TestNewSingleton(t *testing.T) {
+	once = sync.Once{}
+
+	got, err := NewSingleton(
+		"test",
+		nil,
+		nil,
+		1*time.Second,
+		1*time.Second,
+		3,
+	)
+	if err != nil {
+		t.Fatalf("NewDefault() error = %v", err)
+	}
+
+	assert.NotPanics(t, func() {
+		Get()
+	})
+
+	assert.NotNil(t, got)
+	assert.NoError(t, err)
+	assert.Contains(t, got.GetName(), "test")
 }

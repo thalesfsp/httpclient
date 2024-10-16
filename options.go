@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/thalesfsp/customerror"
-	"github.com/thalesfsp/httpclient/internal/logging"
-	"github.com/thalesfsp/httpclient/internal/shared"
+	"github.com/thalesfsp/httpclient/v2/internal/logging"
+	"github.com/thalesfsp/httpclient/v2/internal/shared"
 )
 
 //////
@@ -167,6 +167,12 @@ func WithRespBody(body interface{}) Func {
 type ClientOptions struct {
 	// Name of the HTTP client.
 	Name string
+
+	// QueryParams of the client.
+	QueryParams map[string]string
+
+	// Headers of the client.
+	Headers map[string]string
 }
 
 // ClientFunc defines the function signature for setting up the client.
@@ -185,6 +191,38 @@ func WithClientName(name string) ClientFunc {
 func WithPrefix(prefix string) ClientFunc {
 	return func(_ *ClientOptions) error {
 		os.Setenv("HTTPCLIENT_METRICS_PREFIX", prefix)
+
+		return nil
+	}
+}
+
+// WithClientQueryParam allows to set a default query param for the client.
+func WithClientQueryParam(k, v string) ClientFunc {
+	return func(o *ClientOptions) error {
+		// Initialize o.QueryParams if needed.
+		if o.QueryParams == nil {
+			o.QueryParams = make(map[string]string)
+		}
+
+		if k != "" || v != "" {
+			o.QueryParams[k] = v
+		}
+
+		return nil
+	}
+}
+
+// WithClientHeader allows to set a default header for the client.
+func WithClientHeader(k, v string) ClientFunc {
+	return func(o *ClientOptions) error {
+		// Initialize o.Headers if needed.
+		if o.Headers == nil {
+			o.Headers = make(map[string]string)
+		}
+
+		if k != "" || v != "" {
+			o.Headers[k] = v
+		}
 
 		return nil
 	}

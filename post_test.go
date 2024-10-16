@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thalesfsp/httpclient/internal/shared"
+	"github.com/thalesfsp/httpclient/v2/internal/shared"
 )
 
 func TestClient_Post(t *testing.T) {
@@ -58,7 +58,7 @@ func TestClient_Post(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
 			defer cancel()
 
-			c, err := NewDefault("test")
+			c, err := NewDefault(WithClientName("test"))
 			if err != nil {
 				t.Fatalf("NewDefault() error = %v", err)
 			}

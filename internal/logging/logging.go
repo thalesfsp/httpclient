@@ -8,7 +8,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/thalesfsp/httpclient/internal/shared"
+	"github.com/thalesfsp/httpclient/v2/internal/shared"
 	"github.com/thalesfsp/sypl"
 	"github.com/thalesfsp/sypl/fields"
 	"github.com/thalesfsp/sypl/level"

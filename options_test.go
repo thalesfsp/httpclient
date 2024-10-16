@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thalesfsp/httpclient/internal/shared"
+	"github.com/thalesfsp/httpclient/v2/internal/shared"
 )
 
 type TestStruct struct {

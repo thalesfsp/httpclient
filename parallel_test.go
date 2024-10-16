@@ -4,11 +4,12 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/thalesfsp/httpclient/internal/shared"
+	"github.com/thalesfsp/httpclient/v2/internal/shared"
 )
 
 //nolint:bodyclose,intrange
@@ -122,7 +123,11 @@ func TestClient_ParallelGet2(t *testing.T) {
 				urls = []string{tt.url}
 			}
 
-			_, err := NewDefaultSingleton("parallelget2")
+			// Reset singleton.
+			once = sync.Once{}
+
+			// Should setup singleton.
+			_, err := NewDefaultSingleton(WithClientName("parallelget2"))
 			assert.NoError(t, err)
 
 			responses, errors := Get().ParallelGet(ctx, tt.args.opts, urls...)

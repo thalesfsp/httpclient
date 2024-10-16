@@ -1,4 +1,4 @@
-module github.com/thalesfsp/httpclient
+module github.com/thalesfsp/httpclient/v2
 
 go 1.23
 

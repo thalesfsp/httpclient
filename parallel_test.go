@@ -107,6 +107,7 @@ func TestClient_ParallelGet2(t *testing.T) {
 				tt.expectedHeaders,
 				tt.expectedQueryParams,
 				tt.testServerBody,
+				nil,
 			)
 			defer server.Close()
 

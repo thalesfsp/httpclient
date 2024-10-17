@@ -4,9 +4,12 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/thalesfsp/customerror"
 	"github.com/thalesfsp/httpclient/v2/internal/shared"
 )
 
@@ -48,7 +51,7 @@ func TestClient_Get(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := shared.CreateHTTPTestServer(tt.testServerStatusCode, nil, nil, tt.testServerBody)
+			server := shared.CreateHTTPTestServer(tt.testServerStatusCode, nil, nil, tt.testServerBody, nil)
 			defer server.Close()
 
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
@@ -121,7 +124,7 @@ func TestClient_Get_RespBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup built-in HTTP test server.
-			server := shared.CreateHTTPTestServer(tt.testServerStatusCode, nil, nil, tt.testServerBody)
+			server := shared.CreateHTTPTestServer(tt.testServerStatusCode, nil, nil, tt.testServerBody, nil)
 			defer server.Close()
 
 			// Setup context with timeout.
@@ -216,7 +219,9 @@ func TestClient_Get_ClientWithOptions(t *testing.T) {
 					"name":    "john",
 					"surname": "peter",
 				},
-				tt.testServerBody)
+				tt.testServerBody,
+				nil,
+			)
 			defer server.Close()
 
 			// Setup context with timeout.
@@ -273,6 +278,132 @@ func TestClient_Get_ClientWithOptions(t *testing.T) {
 					)
 				}
 			}
+		})
+	}
+}
+
+func TestClient_Get_ClientWithCustomRetrierRegexes(t *testing.T) {
+	clientTestRegex := regexp.MustCompile(`(?mi)test`)
+	perRequestTestRegex := regexp.MustCompile(`(?mi)locked`)
+
+	tests := []struct {
+		name                 string
+		expectedBody         string
+		expectedStatusCode   int
+		testServerBody       string
+		testServerError      error
+		testServerStatusCode int
+		clientOptions        []ClientFunc
+		requestOptions       []Func
+		timeout              time.Duration
+		want                 *http.Response
+		wantErr              bool
+	}{
+		{
+			name:               "TestClient_Get - should work",
+			expectedBody:       http.StatusText(http.StatusLocked),
+			expectedStatusCode: http.StatusLocked,
+			testServerBody: func() string {
+				b, err := shared.Marshal(shared.TestData)
+				if err != nil {
+					t.Fatalf("shared.Marshal(shared.TestData) error = %v", err)
+				}
+
+				return string(b)
+			}(),
+			testServerError:      customerror.New("test error"),
+			testServerStatusCode: http.StatusLocked,
+			clientOptions: []ClientFunc{
+				WithClientName("test"),
+				WithClientHeader("X-Test", "test"),
+				WithClientQueryParam("name", "john"),
+				WithClientCustomRetrierRegexes(clientTestRegex),
+			},
+			requestOptions: []Func{
+				WithQueryParam("surname", "peter"),
+				WithHeader("X-Test-2", "test2"),
+			},
+			timeout: 10 * time.Second,
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name:               "TestClient_Get - should work",
+			expectedBody:       http.StatusText(http.StatusLocked),
+			expectedStatusCode: http.StatusLocked,
+			testServerBody: func() string {
+				b, err := shared.Marshal(shared.TestData)
+				if err != nil {
+					t.Fatalf("shared.Marshal(shared.TestData) error = %v", err)
+				}
+
+				return string(b)
+			}(),
+			testServerStatusCode: http.StatusLocked,
+			testServerError:      customerror.New(http.StatusText(http.StatusLocked)),
+			clientOptions: []ClientFunc{
+				WithClientName("test"),
+				WithClientHeader("X-Test", "test"),
+				WithClientQueryParam("name", "john"),
+			},
+			requestOptions: []Func{
+				WithQueryParam("surname", "peter"),
+				WithHeader("X-Test-2", "test2"),
+				WithCustomRetrierRegexes(perRequestTestRegex),
+			},
+			timeout: 10 * time.Second,
+			want:    nil,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup built-in HTTP test server.
+			server := shared.CreateHTTPTestServer(
+				tt.testServerStatusCode,
+				map[string]string{
+					"X-Test":   "test",
+					"X-Test-2": "test2",
+				},
+				map[string]string{
+					"name":    "john",
+					"surname": "peter",
+				},
+				tt.testServerBody,
+				tt.testServerError,
+			)
+			defer server.Close()
+
+			// Setup context with timeout.
+			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
+			defer cancel()
+
+			// Retrieve client - it will be automatically setup.
+			c, err := NewDefault(
+				tt.clientOptions...,
+			)
+			if err != nil {
+				t.Fatalf("NewDefault() error = %v", err)
+			}
+
+			// Get will automagically fill `testData` with the response.
+			var testData shared.TestDataS
+
+			got, err := c.Get(
+				ctx,
+				server.URL,
+				append(tt.requestOptions, WithRespBody(&testData))...,
+			)
+			if err != nil && !tt.wantErr {
+				// Update the error retried status.
+				if cE, ok := customerror.To(err); ok {
+					assert.Equal(t, true, cE.Retried)
+
+					return
+				}
+			}
+
+			defer got.Body.Close()
 		})
 	}
 }

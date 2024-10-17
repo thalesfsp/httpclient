@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/thalesfsp/customerror"
@@ -22,6 +23,9 @@ type Func func(o *Options) error
 
 // Options contains the fields shared between request's options.
 type Options struct {
+	// Custom classifier regexes.
+	CustomRetrierRegexes []*regexp.Regexp
+
 	// Headers of the request.
 	Headers map[string]string `json:"headers"`
 
@@ -40,6 +44,22 @@ type Options struct {
 //////
 // Exported built-in options.
 //////
+
+// WithCustomRetrierRegexes allows to set custom retrier regexes applied against
+// the error message.
+func WithCustomRetrierRegexes(regexes ...*regexp.Regexp) Func {
+	return func(o *Options) error {
+		// Initialize if needed.
+		if o.CustomRetrierRegexes == nil {
+			o.CustomRetrierRegexes = make([]*regexp.Regexp, 0)
+		}
+
+		// Append the regexes.
+		o.CustomRetrierRegexes = append(o.CustomRetrierRegexes, regexes...)
+
+		return nil
+	}
+}
 
 // WithHeader add a key value pair to the request's headers.
 func WithHeader(k, v string) Func {
@@ -165,6 +185,9 @@ func WithRespBody(body interface{}) Func {
 
 // ClientOptions options specific to setting up the client.
 type ClientOptions struct {
+	// Custom classifier regexes.
+	CustomRetrierRegexes []*regexp.Regexp
+
 	// Name of the HTTP client.
 	Name string
 
@@ -191,6 +214,22 @@ func WithClientName(name string) ClientFunc {
 func WithPrefix(prefix string) ClientFunc {
 	return func(_ *ClientOptions) error {
 		os.Setenv("HTTPCLIENT_METRICS_PREFIX", prefix)
+
+		return nil
+	}
+}
+
+// WithClientCustomRetrierRegexes allows to set custom retrier regexes applied against
+// the error message.
+func WithClientCustomRetrierRegexes(regexes ...*regexp.Regexp) ClientFunc {
+	return func(o *ClientOptions) error {
+		// Initialize if needed.
+		if o.CustomRetrierRegexes == nil {
+			o.CustomRetrierRegexes = make([]*regexp.Regexp, 0)
+		}
+
+		// Append the regexes.
+		o.CustomRetrierRegexes = append(o.CustomRetrierRegexes, regexes...)
 
 		return nil
 	}

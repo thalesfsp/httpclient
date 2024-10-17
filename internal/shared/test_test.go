@@ -32,7 +32,7 @@ func TestCreateHTTPTestServer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := CreateHTTPTestServer(tt.args.statusCode, nil, nil, tt.args.body)
+			s := CreateHTTPTestServer(tt.args.statusCode, nil, nil, tt.args.body, nil)
 			defer s.Close()
 
 			if s == nil {

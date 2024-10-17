@@ -67,6 +67,7 @@ func TestNewSingleton(t *testing.T) {
 		"test",
 		nil,
 		nil,
+		nil,
 		1*time.Second,
 		1*time.Second,
 		3,

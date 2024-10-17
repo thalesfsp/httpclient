@@ -71,8 +71,9 @@ type Client struct {
 
 	Logger sypl.ISypl `json:"-" validate:"required"` // Logger used for logging information.
 
-	Headers     map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default headers for every request.
-	QueryParams map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default query parameters for every request.
+	CustomRetrierRegexes []*regexp.Regexp  `json:"-"`                                // Custom regexes for retryable errors.
+	Headers              map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default headers for every request.
+	QueryParams          map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default query parameters for every request.
 
 	Name string `json:"name" validate:"required,lowercase,gte=1"` // Name of the client instance.
 
@@ -195,7 +196,16 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	// Initialize a retrier with exponential backoff strategy.
 	r := retrier.New(
 		retrier.ExponentialBackoff(c.RetrierBackoffTimes, c.RetrierBackoffDuration), // Backoff strategy.
-		HTTPStatusCodeClassifier{Regex: httpRetrierRegex, Client: c},                // Classifier to determine retryable errors.
+		CustomClassifier{
+			// Custom regexes for retryable errors.
+			CustomRegexes: c.setCustomRetryableRegexes(options.CustomRetrierRegexes...),
+
+			// Regex to match retryable HTTP status codes.
+			HTTPRetrierRegex: httpRetrierRegex,
+
+			// Classifier to determine retryable errors.
+			Client: c,
+		},
 	)
 
 	var resp *http.Response // Variable to hold the response.
@@ -346,6 +356,55 @@ func (c *Client) setHeaders(req *http.Request, headers map[string]string) {
 	}
 }
 
+// setCustomRetryableRegexes sets the custom retryable regexes for the client.
+// It combines the default and per-request retryable regexes and returns the
+// combined list.
+func (c *Client) setCustomRetryableRegexes(customRetryableRegexes ...*regexp.Regexp) []*regexp.Regexp {
+	// Initialize accumulator for custom retryable regexes.
+	accumulator := make([]*regexp.Regexp, 0)
+
+	// Initialize the query parameters.
+	if c.CustomRetrierRegexes == nil {
+		c.CustomRetrierRegexes = make([]*regexp.Regexp, 0)
+	}
+
+	// Process default headers if any are defined.
+	if len(c.CustomRetrierRegexes) > 0 {
+		loggingOpts := []sypl.OptionFunc{sypl.WithTags("default custom retryable regexes")}
+
+		// Add each header to the request and logging options.
+		for i, v := range c.CustomRetrierRegexes {
+			// Append to accumulator.
+			accumulator = append(accumulator, v)
+
+			// Add to logging fields.
+			loggingOpts = append(loggingOpts, sypl.WithField(fmt.Sprintf("default custom retryable regex - %d", i), v))
+		}
+
+		// Log the default headers being set.
+		c.GetLogger().PrintlnWithOptions(level.Trace, "default custom retryable regexes", loggingOpts...)
+	}
+
+	// Process per-request headers if any are defined.
+	if len(customRetryableRegexes) > 0 {
+		loggingOpts := []sypl.OptionFunc{sypl.WithTags("per-request custom retryable regexes")}
+
+		// Add each header to the request and logging options.
+		for i, v := range customRetryableRegexes {
+			// Append to accumulator.
+			accumulator = append(accumulator, v)
+
+			// Add to logging fields.
+			loggingOpts = append(loggingOpts, sypl.WithField(fmt.Sprintf("per-request custom retryable regex - %d", i), v))
+		}
+
+		// Log the per-request headers being set.
+		c.GetLogger().PrintlnWithOptions(level.Trace, "per-request custom retryable regexes", loggingOpts...)
+	}
+
+	return accumulator
+}
+
 // prepareRequestFields prepares the fields used for logging the request.
 func (c *Client) prepareRequestFields(method, url string, req *http.Request, options *Options) fields.Fields {
 	reqFields := fields.Fields{
@@ -443,6 +502,7 @@ func New(
 	name string,
 	headers map[string]string,
 	queryParams map[string]string,
+	customRetrierRegexes []*regexp.Regexp,
 	timeout time.Duration,
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
@@ -452,6 +512,10 @@ func New(
 
 	// Create a new logger instance for the client.
 	logger := logging.Get().New(name).SetTags(shared.PackageName, name)
+
+	if customRetrierRegexes == nil {
+		customRetrierRegexes = make([]*regexp.Regexp, 0)
+	}
 
 	if headers == nil {
 		headers = make(map[string]string)
@@ -473,8 +537,9 @@ func New(
 
 		Logger: logger,
 
-		Headers:     headers,
-		QueryParams: queryParams,
+		CustomRetrierRegexes: customRetrierRegexes,
+		Headers:              headers,
+		QueryParams:          queryParams,
 
 		Name: name,
 
@@ -559,6 +624,7 @@ func NewDefault(opts ...ClientFunc) (*Client, error) {
 		defaultOptions.Name,
 		defaultOptions.Headers,
 		defaultOptions.QueryParams,
+		defaultOptions.CustomRetrierRegexes,
 		30*time.Second,
 		time.Second,
 		3,
@@ -574,6 +640,7 @@ func NewSingleton(
 	name string,
 	headers map[string]string,
 	queryParams map[string]string,
+	customRetrierRegexes []*regexp.Regexp,
 	timeout time.Duration,
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
@@ -586,6 +653,7 @@ func NewSingleton(
 			name,
 			headers,
 			queryParams,
+			customRetrierRegexes,
 			timeout,
 			retrierBackoffDuration,
 			retrierBackoffTimes,
@@ -638,6 +706,7 @@ func MustNew(
 	name string,
 	headers map[string]string,
 	queryParams map[string]string,
+	customRetrierRegexes []*regexp.Regexp,
 	timeout time.Duration,
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
@@ -646,6 +715,7 @@ func MustNew(
 		name,
 		headers,
 		queryParams,
+		customRetrierRegexes,
 		timeout,
 		retrierBackoffDuration,
 		retrierBackoffTimes,

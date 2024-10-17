@@ -52,7 +52,7 @@ func TestClient_Post(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := shared.CreateHTTPTestServer(tt.testServerStatusCode, map[string]string{
 				"Content-Type": "application/x-www-form-urlencoded",
-			}, nil, tt.testServerBody)
+			}, nil, tt.testServerBody, nil)
 			defer server.Close()
 
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)

@@ -94,6 +94,7 @@ func CreateHTTPTestServer(
 	headers map[string]string,
 	queryParams map[string]string,
 	body string,
+	err error,
 ) *httptest.Server {
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		// Check headers in request.
@@ -122,14 +123,22 @@ func CreateHTTPTestServer(
 			}
 		}
 
-		// Set status code.
-		res.WriteHeader(statusCode)
-
-		// Set body.
-		if _, err := res.Write([]byte(body)); err != nil {
-			http.Error(res, err.Error(), http.StatusInternalServerError)
+		// Set error message, if specified.
+		if err != nil {
+			http.Error(res, err.Error(), statusCode)
 
 			return
+		}
+
+		res.WriteHeader(statusCode)
+
+		// Set body, if specified.
+		if body != "" {
+			if _, err := res.Write([]byte(body)); err != nil {
+				http.Error(res, err.Error(), http.StatusInternalServerError)
+
+				return
+			}
 		}
 	}))
 

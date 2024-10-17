@@ -6,9 +6,9 @@ require (
 	github.com/eapache/go-resiliency v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.9.0
-	github.com/thalesfsp/concurrentloop v1.3.0
-	github.com/thalesfsp/customerror v1.2.1
-	github.com/thalesfsp/status v1.0.17
+	github.com/thalesfsp/concurrentloop v1.3.2
+	github.com/thalesfsp/customerror v1.2.7
+	github.com/thalesfsp/status v1.0.18
 	github.com/thalesfsp/sypl v1.9.18
 	github.com/thalesfsp/validation v0.0.3
 	go.elastic.co/apm v1.15.0
@@ -26,7 +26,7 @@ require (
 	github.com/elastic/go-windows v1.0.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.17.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.5 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.6 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -42,9 +42,9 @@ require (
 	github.com/santhosh-tekuri/jsonschema v1.2.4 // indirect
 	github.com/thalesfsp/randomness v0.0.9 // indirect
 	go.elastic.co/fastjson v1.4.0 // indirect
-	go.opentelemetry.io/otel v1.30.0 // indirect
-	go.opentelemetry.io/otel/metric v1.30.0 // indirect
-	go.opentelemetry.io/otel/trace v1.30.0 // indirect
+	go.opentelemetry.io/otel v1.31.0 // indirect
+	go.opentelemetry.io/otel/metric v1.31.0 // indirect
+	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.21.0 // indirect

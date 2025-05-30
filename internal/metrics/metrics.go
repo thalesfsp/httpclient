@@ -13,7 +13,7 @@ import (
 func NewInt(name string) *expvar.Int {
 	prefix := os.Getenv("HTTPCLIENT_METRICS_PREFIX")
 
-	finalName := name + "--" + time.Now().Format(time.RFC3339)
+	finalName := name + "-" + time.Now().Format(time.RFC3339)
 
 	if prefix != "" {
 		finalName = prefix + "." + finalName

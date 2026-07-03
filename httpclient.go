@@ -214,6 +214,20 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	if err := r.Run(func() error {
 		req.Close = true // Ensure the connection is closed after the request.
 
+		// Rewind the request body before each attempt. The body reader is
+		// drained (and closed) by the transport on every attempt, so without
+		// this a retry would send an empty body and fail with a ContentLength
+		// mismatch. GetBody is set by http.NewRequest for the rewindable body
+		// types this package produces (string, []byte, url.Values, JSON).
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return HandleHTTPResponseError(nil, url, "rewind request body", err)
+			}
+
+			req.Body = body
+		}
+
 		// Perform the HTTP request.
 		respInternal, err := c.client.Do(req)
 		if err != nil {
@@ -447,10 +461,15 @@ func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, r
 		}
 	default:
 		// For other types, read the entire response body.
-		bodyBytes, err := io.ReadAll(resp.Body)
+		//
+		// NOTE: assign to the outer `bodyBytes` (do NOT use `:=` here, which
+		// would shadow it and leave the reset body empty).
+		b, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err // Return error if reading fails.
 		}
+
+		bodyBytes = b
 
 		// Decode the response body into the provided interface.
 		if err := shared.Decode(bytes.NewReader(bodyBytes), respBody); err != nil {

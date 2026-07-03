@@ -103,12 +103,14 @@ func WithBasicAuth(username, password string) Func {
 }
 
 // WithQueryParam add a key value pair to the request's query params.
+//
+// A nil-safe no-op when either key or value is empty (mirrors WithHeader).
 func WithQueryParam(k, v string) Func {
-	if k == "" || v == "" {
-		return nil
-	}
-
 	return func(o *Options) error {
+		if k == "" || v == "" {
+			return nil
+		}
+
 		o.QueryParams[k] = v
 
 		return nil

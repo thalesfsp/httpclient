@@ -279,10 +279,9 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 // setQueryParams sets the query params for the HTTP request, including both
 // default and per-request headers.
 func (c *Client) setQueryParams(req *http.Request, queryParams map[string]string) {
-	// Initialize the query parameters.
-	if c.QueryParams == nil {
-		c.QueryParams = make(map[string]string)
-	}
+	// NOTE: do NOT lazily initialize c.QueryParams here. Writing to the shared
+	// client field during a request is a data race under concurrent use;
+	// ranging over a nil map below is already a safe no-op.
 
 	// Initialize the query parameters for the request.
 	q := req.URL.Query()
@@ -330,10 +329,9 @@ func (c *Client) setQueryParams(req *http.Request, queryParams map[string]string
 // setHeaders sets the headers for the HTTP request, including both default and
 // per-request headers.
 func (c *Client) setHeaders(req *http.Request, headers map[string]string) {
-	// Initialize the headers if not provided.
-	if c.Headers == nil {
-		c.Headers = make(map[string]string)
-	}
+	// NOTE: do NOT lazily initialize c.Headers here. Writing to the shared
+	// client field during a request is a data race under concurrent use;
+	// ranging over a nil map below is already a safe no-op.
 
 	// Process default headers if any are defined.
 	if len(c.Headers) > 0 {
@@ -377,10 +375,9 @@ func (c *Client) setCustomRetryableRegexes(customRetryableRegexes ...*regexp.Reg
 	// Initialize accumulator for custom retryable regexes.
 	accumulator := make([]*regexp.Regexp, 0)
 
-	// Initialize the query parameters.
-	if c.CustomRetrierRegexes == nil {
-		c.CustomRetrierRegexes = make([]*regexp.Regexp, 0)
-	}
+	// NOTE: do NOT lazily initialize c.CustomRetrierRegexes here. Writing to the
+	// shared client field during a request is a data race under concurrent use;
+	// ranging over a nil slice below is already a safe no-op.
 
 	// Process default headers if any are defined.
 	if len(c.CustomRetrierRegexes) > 0 {

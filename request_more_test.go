@@ -84,7 +84,12 @@ func TestRequest_RespBodyToFile(t *testing.T) {
 
 	resp, err := c.Get(ctx5(t), srv.URL, WithRespBody(f))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+
+	// By design, when RespBody is an *os.File the body is streamed into the
+	// file and resp.Body is NOT re-buffered (no double storage). Document that.
+	leftover, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	assert.Empty(t, leftover, "file branch streams to the file; resp.Body is intentionally empty")
 
 	require.NoError(t, f.Close())
 	got, err := os.ReadFile(path)

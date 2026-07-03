@@ -142,9 +142,8 @@ func CreateHTTPTestServer(
 		}
 	}))
 
-	// Give enough time to be ready.
-	time.Sleep(1 * time.Second)
-
+	// httptest.NewServer only returns once its listener is accepting
+	// connections, so the server is ready immediately — no sleep needed.
 	return testServer
 }
 

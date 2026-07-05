@@ -35,9 +35,11 @@ func TestWithReqBody(t *testing.T) {
 			err:      nil,
 		},
 		{
-			name:     "io.Reader body",
-			body:     strings.NewReader("test"),
-			expected: strings.NewReader("test"),
+			name: "io.Reader body",
+			body: strings.NewReader("test"),
+			// io.Reader bodies are buffered into a *bytes.Reader so they stay
+			// replayable on retry.
+			expected: bytes.NewReader([]byte("test")),
 			err:      nil,
 		},
 		{

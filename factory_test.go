@@ -101,14 +101,14 @@ func TestGetters(t *testing.T) {
 
 func TestGet_PanicsWhenUninitialized(t *testing.T) {
 	once = sync.Once{}
-	singleton = nil
+	singleton.Store(nil)
 
 	require.Panics(t, func() { Get() })
 }
 
 func TestNewSingleton_ReturnsSameInstance(t *testing.T) {
 	once = sync.Once{}
-	singleton = nil
+	singleton.Store(nil)
 
 	c1, err := NewSingleton(uniqueName("single"), nil, nil, nil, time.Second, time.Second, 3)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestNewSingleton_ReturnsSameInstance(t *testing.T) {
 
 func TestNewDefaultSingleton_ReturnsSameInstance(t *testing.T) {
 	once = sync.Once{}
-	singleton = nil
+	singleton.Store(nil)
 
 	c1, err := NewDefaultSingleton(WithClientName(uniqueName("dsingle")))
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestNewDefaultSingleton_ReturnsSameInstance(t *testing.T) {
 
 func TestNewSingleton_ErrorPropagates(t *testing.T) {
 	once = sync.Once{}
-	singleton = nil
+	singleton.Store(nil)
 
 	// Uppercase name → validation error inside New → NewSingleton returns it.
 	c, err := NewSingleton("UPPER", nil, nil, nil, time.Second, time.Second, 3)
@@ -147,7 +147,7 @@ func TestNewSingleton_ErrorPropagates(t *testing.T) {
 
 func TestNewDefaultSingleton_ErrorPropagates(t *testing.T) {
 	once = sync.Once{}
-	singleton = nil
+	singleton.Store(nil)
 
 	boom := func(_ *ClientOptions) error { return assert.AnError }
 	c, err := NewDefaultSingleton(boom)

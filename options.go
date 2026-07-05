@@ -119,9 +119,11 @@ func WithQueryParam(k, v string) Func {
 
 // WithReqBody set the request's body. Processing rule:
 //
-// - If it's a string, then use it as is.
-// - If it's an io.Reader, then use it as is.
-// - If it's anything else, then marshal it and use it as is.
+//   - If it's a string, then use it as is.
+//   - If it's an io.Reader, then it is buffered into memory so the request stays
+//     replayable on retry (a raw reader has no GetBody and cannot be rewound).
+//     This trades streaming for retryability, which is the point of this client.
+//   - If it's anything else, then marshal it and use it as is.
 func WithReqBody(body interface{}) Func {
 	return func(o *Options) error {
 		if body == nil {
@@ -136,9 +138,18 @@ func WithReqBody(body interface{}) Func {
 
 			bodyReader = strings.NewReader(b)
 		case io.Reader:
-			logging.Get().Debuglnf("request body: %+v", bodyReader)
+			// Buffer the reader so the body can be replayed on retry.
+			data, err := io.ReadAll(b)
+			if err != nil {
+				return customerror.NewFailedToError(
+					"read reqBody reader",
+					customerror.WithError(err),
+				)
+			}
 
-			bodyReader = b
+			logging.Get().Debuglnf("request body: %s", string(data))
+
+			bodyReader = bytes.NewReader(data)
 		case url.Values:
 			logging.Get().Debuglnf("request body: %s", b.Encode())
 
@@ -212,7 +223,12 @@ func WithClientName(name string) ClientFunc {
 	}
 }
 
-// WithPrefix set the prefix of the HTTP metrics.
+// WithPrefix sets the prefix of the HTTP metrics.
+//
+// WARN: this sets a PROCESS-GLOBAL environment variable
+// (HTTPCLIENT_METRICS_PREFIX) read at metric-creation time, so it affects every
+// client created afterwards and is not safe to call concurrently with client
+// construction. Set it once at startup, before creating clients.
 func WithPrefix(prefix string) ClientFunc {
 	return func(_ *ClientOptions) error {
 		os.Setenv("HTTPCLIENT_METRICS_PREFIX", prefix)

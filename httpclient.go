@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eapache/go-resiliency/retrier"
@@ -38,6 +39,10 @@ const DefaultMetricCounterLabel = "counter"
 // Type of the entity.
 const Type = "httpclient"
 
+// maxErrorBodyBytes caps how much of an error response body is read into the
+// error context, bounding memory on huge error payloads (multiplied by retries).
+const maxErrorBodyBytes = 1 << 20 // 1 MiB.
+
 // httpRetrierRegex is a regular expression that matches HTTP status codes
 // indicating that a request should be retried. Specifically, it matches:
 // - 408 (Request Timeout)
@@ -47,9 +52,12 @@ var httpRetrierRegex = regexp.MustCompile(`(?m)^(408|429|5\d\d)$`)
 
 // singleton and once are used to implement a singleton pattern for the Client.
 // This ensures that only one instance of the Client is created.
+//
+// singleton is an atomic.Pointer so Get() can read it without racing the write
+// performed inside once.Do by the NewSingleton constructors.
 var (
 	once      sync.Once
-	singleton *Client
+	singleton atomic.Pointer[Client]
 )
 
 // Ensure that Client implements the IHTTP interface.
@@ -71,6 +79,11 @@ type Client struct {
 
 	Logger sypl.ISypl `json:"-" validate:"required"` // Logger used for logging information.
 
+	// WARN: CustomRetrierRegexes, Headers, and QueryParams are READ on every
+	// request. They are safe for concurrent requests, but must NOT be mutated
+	// after the client starts serving requests — configure them at construction
+	// time (via New/NewDefault options). Mutating them concurrently with a
+	// request is a data race.
 	CustomRetrierRegexes []*regexp.Regexp  `json:"-"`                                // Custom regexes for retryable errors.
 	Headers              map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default headers for every request.
 	QueryParams          map[string]string `json:"-" validate:"omitempty,dive,gt=0"` // Default query parameters for every request.
@@ -105,8 +118,16 @@ func HandleHTTPResponseError(resp *http.Response, url, msg string, externalErr e
 			// Ensure the response body will be closed.
 			defer resp.Body.Close()
 
-			// Read the entire response body.
-			body, err := shared.ReadAll(resp.Body)
+			// Read the response body for the error context, bounded to
+			// maxErrorBodyBytes so a huge error payload (× retries) cannot blow
+			// up memory.
+			body, err := shared.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+
+			// Drain a bounded remainder so a normal-sized error body still lets
+			// the keep-alive connection be reused, without draining a
+			// pathological body (which would let a server tie us up).
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBodyBytes))
+
 			if err == nil {
 				// Include the response body in the error context.
 				customerrorOptions = append(customerrorOptions, customerror.WithField("respBody", string(body)))
@@ -148,6 +169,19 @@ func (c *Client) SetName(name string) *Client {
 	return c
 }
 
+// traceEnabled reports whether any logger output is at TRACE level, so the hot
+// path can skip building log fields (maps, APM correlation, Sprintf) that would
+// be discarded at the default ERROR level.
+func (c *Client) traceEnabled() bool {
+	for _, lvl := range c.Logger.GetMaxLevel() {
+		if lvl >= level.Trace {
+			return true
+		}
+	}
+
+	return false
+}
+
 // request is the core method used to make HTTP requests with enhanced features.
 // It includes retry logic, logging, error handling, and response processing.
 func (c *Client) request(ctx context.Context, method string, url string, o ...Func) (*http.Response, error) {
@@ -181,17 +215,24 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	// Set headers on the request.
 	c.setHeaders(req, options.Headers)
 
-	// Prepare fields for logging the request.
-	reqFields := c.prepareRequestFields(method, url, req, options)
+	// Build log fields only when trace logging is actually enabled. The field
+	// maps, APM correlation, map copy, and later Sprintf are wasted work at the
+	// default ERROR level.
+	logTrace := c.traceEnabled()
 
-	// Copy request fields to response fields for consistent logging.
-	respFields := make(fields.Fields, len(reqFields))
-	for k, v := range reqFields {
-		respFields[k] = v
+	var reqFields, respFields fields.Fields
+	if logTrace {
+		reqFields = c.prepareRequestFields(method, url, req, options)
+
+		// Copy request fields to response fields for consistent logging.
+		respFields = make(fields.Fields, len(reqFields))
+		for k, v := range reqFields {
+			respFields[k] = v
+		}
+
+		// Log the creation of the request.
+		c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Created.String(), sypl.WithFields(reqFields))
 	}
-
-	// Log the creation of the request.
-	c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Created.String(), sypl.WithFields(reqFields))
 
 	// Initialize a retrier with exponential backoff strategy.
 	r := retrier.New(
@@ -212,7 +253,10 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 
 	// Execute the request with retry logic.
 	if err := r.Run(func() error {
-		req.Close = true // Ensure the connection is closed after the request.
+		// NOTE: do NOT set req.Close = true. It forces "Connection: close" and
+		// defeats the transport's keep-alive pool, opening a fresh TCP/TLS
+		// connection on every request. Callers reusing a client benefit from
+		// connection reuse; they remain responsible for draining/closing bodies.
 
 		// Rewind the request body before each attempt. The body reader is
 		// drained (and closed) by the transport on every attempt, so without
@@ -250,9 +294,6 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 			}
 		}
 
-		// Log the successful request.
-		c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(reqFields))
-
 		resp = respInternal // Assign the successful response.
 
 		return nil // Return nil to indicate success.
@@ -262,7 +303,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 
 	// If a response body is expected and available, process it.
 	if resp != nil && options.RespBody != nil && resp.Body != nil {
-		if err := c.handleResponseBody(resp, options.RespBody, &respFields); err != nil {
+		if err := c.handleResponseBody(resp, options.RespBody, respFields); err != nil {
 			return nil, err // Return the error encountered.
 		}
 	}
@@ -270,8 +311,10 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 	// Increment the success counter for metrics.
 	c.counterSuccess.Add(1)
 
-	// Log the successful completion of the request.
-	c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(respFields), sypl.WithTags("request"))
+	// Log the successful completion of the request (trace only).
+	if logTrace {
+		c.GetLogger().PrintlnWithOptions(level.Trace, "request "+status.Succeeded.String(), sypl.WithFields(respFields), sypl.WithTags("request"))
+	}
 
 	return resp, nil // Return the response and nil error.
 }
@@ -442,8 +485,10 @@ func (c *Client) prepareRequestFields(method, url string, req *http.Request, opt
 	return logging.ToAPM(req.Context(), reqFields)
 }
 
-// handleResponseBody reads and processes the response body.
-func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields *fields.Fields) error {
+// handleResponseBody reads and processes the response body. respFields may be
+// nil when trace logging is disabled, in which case no log fields are recorded
+// (and the expensive Sprintf is skipped).
+func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, respFields fields.Fields) error {
 	// Ensure the response body will be closed.
 	defer resp.Body.Close()
 
@@ -473,16 +518,18 @@ func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, r
 			return err // Return error if decoding fails.
 		}
 
-		// Include the response body in the logging fields.
-		(*respFields)["respBody"] = fmt.Sprintf("%+v", respBody)
+		// Include the response body in the logging fields (trace only).
+		if respFields != nil {
+			respFields["respBody"] = fmt.Sprintf("%+v", respBody)
+		}
 	}
 
 	// Reset the response body so it can be read again if necessary.
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Include the status code in the logging fields if available.
-	if resp.StatusCode > 0 {
-		(*respFields)["respStatusCode"] = resp.StatusCode
+	if respFields != nil && resp.StatusCode > 0 {
+		respFields["respStatusCode"] = resp.StatusCode
 	}
 
 	return nil // Return nil to indicate successful processing.
@@ -492,11 +539,12 @@ func (c *Client) handleResponseBody(resp *http.Response, respBody interface{}, r
 //
 // WARN: It panics if the client has not been initialized.
 func Get() *Client {
-	if singleton == nil {
+	c := singleton.Load()
+	if c == nil {
 		panic("http client not initialized. Call `http.New()` or `http.NewDefault()` first")
 	}
 
-	return singleton
+	return c
 }
 
 // IsRespSuccess checks if the response status code indicates a successful
@@ -680,14 +728,14 @@ func NewSingleton(
 			return
 		}
 
-		singleton = c // Set the singleton instance.
+		singleton.Store(c) // Set the singleton instance.
 	})
 
 	if errOut != nil {
 		return nil, errOut // Return any error encountered during initialization.
 	}
 
-	return singleton, nil // Return the singleton client.
+	return singleton.Load(), nil // Return the singleton client.
 }
 
 // NewDefaultSingleton creates a new default Client instance and sets it as the
@@ -704,14 +752,14 @@ func NewDefaultSingleton(opts ...ClientFunc) (*Client, error) {
 			return
 		}
 
-		singleton = c // Set the singleton instance.
+		singleton.Store(c) // Set the singleton instance.
 	})
 
 	if errOut != nil {
 		return nil, errOut // Return any error encountered during initialization.
 	}
 
-	return singleton, nil // Return the singleton client.
+	return singleton.Load(), nil // Return the singleton client.
 }
 
 //////

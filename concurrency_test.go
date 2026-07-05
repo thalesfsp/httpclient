@@ -99,11 +99,10 @@ func TestConcurrent_NilSharedFields_NoRace(t *testing.T) {
 	assert.Nil(t, c.CustomRetrierRegexes)
 }
 
-// TestConcurrent_SingletonReadNoRace exercises Get() (a plain read, pre-fix)
-// concurrently with the singleton Store performed inside once.Do. Under -race
-// this fails if `singleton` is a plain *Client instead of an atomic.Pointer.
+// TestConcurrent_SingletonReadNoRace exercises Get() (a lockless read)
+// concurrently with the singleton Store performed by NewDefaultSingleton. Under
+// -race this fails if `singleton` is a plain *Client instead of an atomic.Pointer.
 func TestConcurrent_SingletonReadNoRace(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	var wg sync.WaitGroup

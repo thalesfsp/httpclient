@@ -50,14 +50,16 @@ const maxErrorBodyBytes = 1 << 20 // 1 MiB.
 // - 5xx (Server Errors)
 var httpRetrierRegex = regexp.MustCompile(`(?m)^(408|429|5\d\d)$`)
 
-// singleton and once are used to implement a singleton pattern for the Client.
-// This ensures that only one instance of the Client is created.
+// singleton holds the process-wide Client. It is an atomic.Pointer so Get() can
+// read it locklessly without racing the store done by the NewSingleton
+// constructors, which serialize their check-and-set under singletonMu.
 //
-// singleton is an atomic.Pointer so Get() can read it without racing the write
-// performed inside once.Do by the NewSingleton constructors.
+// A mutex (not sync.Once) guards initialization so that a FAILED init does not
+// poison the singleton: unlike once.Do, a later call can retry after an error
+// instead of silently returning (nil, nil).
 var (
-	once      sync.Once
-	singleton atomic.Pointer[Client]
+	singletonMu sync.Mutex
+	singleton   atomic.Pointer[Client]
 )
 
 // Ensure that Client implements the IHTTP interface.
@@ -184,7 +186,16 @@ func (c *Client) traceEnabled() bool {
 
 // request is the core method used to make HTTP requests with enhanced features.
 // It includes retry logic, logging, error handling, and response processing.
-func (c *Client) request(ctx context.Context, method string, url string, o ...Func) (*http.Response, error) {
+func (c *Client) request(ctx context.Context, method string, url string, o ...Func) (resp *http.Response, err error) {
+	// Count every failed request exactly once, no matter which stage failed
+	// (preflight, transport / retry-exhaustion, or response-body processing). A
+	// successful request increments counterSuccess instead (below).
+	defer func() {
+		if err != nil {
+			c.counterFailed.Add(1)
+		}
+	}()
+
 	// Validate that the method and URL are provided.
 	if method == "" || url == "" {
 		return nil, customerror.NewRequiredError("method and url are required")
@@ -249,9 +260,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 		},
 	)
 
-	var resp *http.Response // Variable to hold the response.
-
-	// Execute the request with retry logic.
+	// Execute the request with retry logic (resp is the named return value).
 	if err := r.Run(func() error {
 		// NOTE: do NOT set req.Close = true. It forces "Connection: close" and
 		// defeats the transport's keep-alive pool, opening a fresh TCP/TLS
@@ -298,7 +307,7 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 
 		return nil // Return nil to indicate success.
 	}); err != nil {
-		return nil, err // Return any error encountered during retries.
+		return nil, err // Counted by the deferred failure counter.
 	}
 
 	// If a response body is expected and available, process it.
@@ -548,8 +557,12 @@ func Get() *Client {
 }
 
 // IsRespSuccess checks if the response status code indicates a successful
-// request.
+// request. A nil response is treated as unsuccessful (never panics).
 func IsRespSuccess(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+
 	return resp.StatusCode >= http.StatusOK &&
 		resp.StatusCode < http.StatusMultipleChoices
 }
@@ -698,6 +711,24 @@ func NewDefault(opts ...ClientFunc) (*Client, error) {
 //////
 // Singleton factories.
 
+// storeSingleton publishes c as the singleton if none is set yet and returns the
+// winner. It double-checks under the lock so concurrent first-initializers agree
+// on a single instance (the loser's client is discarded). The lock is held only
+// for this fast check-and-store — never during client construction — so a
+// re-entrant option func cannot deadlock.
+func storeSingleton(c *Client) *Client {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+
+	if existing := singleton.Load(); existing != nil {
+		return existing
+	}
+
+	singleton.Store(c)
+
+	return c
+}
+
 // NewSingleton creates a new Client instance and sets it as the singleton.
 // It ensures that only one instance is created, even in concurrent environments.
 func NewSingleton(
@@ -709,57 +740,46 @@ func NewSingleton(
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
 ) (*Client, error) {
-	var errOut error // Variable to hold any error encountered.
-
-	// Use sync.Once to ensure singleton initialization.
-	once.Do(func() {
-		c, err := New(
-			name,
-			headers,
-			queryParams,
-			customRetrierRegexes,
-			timeout,
-			retrierBackoffDuration,
-			retrierBackoffTimes,
-		)
-		if err != nil {
-			errOut = err // Capture the error to return later.
-
-			return
-		}
-
-		singleton.Store(c) // Set the singleton instance.
-	})
-
-	if errOut != nil {
-		return nil, errOut // Return any error encountered during initialization.
+	// Fast path: already initialized.
+	if c := singleton.Load(); c != nil {
+		return c, nil
 	}
 
-	return singleton.Load(), nil // Return the singleton client.
+	// Build OUTSIDE the lock. A failed init is not stored, so a later call can
+	// retry instead of being poisoned.
+	c, err := New(
+		name,
+		headers,
+		queryParams,
+		customRetrierRegexes,
+		timeout,
+		retrierBackoffDuration,
+		retrierBackoffTimes,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return storeSingleton(c), nil
 }
 
 // NewDefaultSingleton creates a new default Client instance and sets it as the
 // singleton.
 func NewDefaultSingleton(opts ...ClientFunc) (*Client, error) {
-	var errOut error // Variable to hold any error encountered.
-
-	// Use sync.Once to ensure singleton initialization.
-	once.Do(func() {
-		c, err := NewDefault(opts...)
-		if err != nil {
-			errOut = err // Capture the error to return later.
-
-			return
-		}
-
-		singleton.Store(c) // Set the singleton instance.
-	})
-
-	if errOut != nil {
-		return nil, errOut // Return any error encountered during initialization.
+	// Fast path: already initialized.
+	if c := singleton.Load(); c != nil {
+		return c, nil
 	}
 
-	return singleton.Load(), nil // Return the singleton client.
+	// Build OUTSIDE the lock so caller-supplied option funcs never run while
+	// singletonMu is held (avoids a re-entrant deadlock). A failed init is not
+	// stored, so a later call can retry.
+	c, err := NewDefault(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return storeSingleton(c), nil
 }
 
 //////

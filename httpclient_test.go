@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +31,7 @@ func TestIsRespSuccess(t *testing.T) {
 }
 
 func TestNewDefault_withOptions(t *testing.T) {
-	once = sync.Once{}
+	singleton.Store(nil)
 
 	got, err := NewDefault(WithClientName("testclientname"), WithPrefix("testprefix"))
 	if err != nil {
@@ -46,7 +45,7 @@ func TestNewDefault_withOptions(t *testing.T) {
 }
 
 func TestNewDefault(t *testing.T) {
-	once = sync.Once{}
+	singleton.Store(nil)
 
 	got, err := NewDefault()
 	if err != nil {
@@ -61,7 +60,7 @@ func TestNewDefault(t *testing.T) {
 }
 
 func TestNewSingleton(t *testing.T) {
-	once = sync.Once{}
+	singleton.Store(nil)
 
 	got, err := NewSingleton(
 		"test",

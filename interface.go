@@ -40,6 +40,13 @@ type IHTTP interface {
 	// this case IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
 	Put(ctx context.Context, url string, o ...Func) (*http.Response, error)
 
+	// Patch does a `PATCH` request.
+	//
+	// NOTE: If `opt.RespBody` is provided, it will read and decode the body,
+	// ALSO CLOSING IT. Otherwise, the body will be left open, and returned. In
+	// this case IT'S THE CALLER'S RESPONSIBILITY TO CLOSE THE BODY.
+	Patch(ctx context.Context, url string, o ...Func) (*http.Response, error)
+
 	// Delete does a `DELETE` request.
 	//
 	// NOTE: If `opt.RespBody` is provided, it will read and decode the body,

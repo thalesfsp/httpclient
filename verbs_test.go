@@ -115,3 +115,17 @@ func TestVerbs_RespBodyDecode(t *testing.T) {
 	assert.Equal(t, "n", out.Name)
 	assert.Equal(t, "v", out.Version)
 }
+
+// Patch must be reachable through the IHTTP interface (it was previously only on
+// the concrete type).
+func TestIHTTP_IncludesPatch(t *testing.T) {
+	srv, rec := echoServer(t, http.StatusOK, "ok")
+
+	var h IHTTP = mustClient(t, uniqueName("iface"))
+
+	resp, err := h.Patch(ctx5(t), srv.URL, WithReqBody("p"))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.MethodPatch, rec.method)
+}

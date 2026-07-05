@@ -55,18 +55,18 @@ func TestClassify_WithClientCounters(t *testing.T) {
 		assert.EqualValues(t, 1, c.counterRetried.Value())
 	})
 
-	t.Run("no match fails and counts", func(t *testing.T) {
+	t.Run("no match fails without counting (request() owns counterFailed)", func(t *testing.T) {
 		c := mustClient(t, uniqueName("clsfail"))
 		cc := CustomClassifier{Client: c, HTTPRetrierRegex: httpRetrierRegex}
 		cE := &customerror.CustomError{StatusCode: 404}
 		assert.Equal(t, retrier.Fail, cc.Classify(cE))
-		assert.EqualValues(t, 1, c.counterFailed.Value())
+		assert.EqualValues(t, 0, c.counterFailed.Value(), "classifier must not count failures")
 	})
 
-	t.Run("non-custom error fails", func(t *testing.T) {
+	t.Run("non-custom error fails without counting", func(t *testing.T) {
 		c := mustClient(t, uniqueName("clsplain"))
 		cc := CustomClassifier{Client: c, HTTPRetrierRegex: httpRetrierRegex}
 		assert.Equal(t, retrier.Fail, cc.Classify(errors.New("plain")))
-		assert.EqualValues(t, 1, c.counterFailed.Value())
+		assert.EqualValues(t, 0, c.counterFailed.Value(), "classifier must not count failures")
 	})
 }

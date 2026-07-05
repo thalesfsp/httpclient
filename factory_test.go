@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -100,14 +99,12 @@ func TestGetters(t *testing.T) {
 }
 
 func TestGet_PanicsWhenUninitialized(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	require.Panics(t, func() { Get() })
 }
 
 func TestNewSingleton_ReturnsSameInstance(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	c1, err := NewSingleton(uniqueName("single"), nil, nil, nil, time.Second, time.Second, 3)
@@ -123,7 +120,6 @@ func TestNewSingleton_ReturnsSameInstance(t *testing.T) {
 }
 
 func TestNewDefaultSingleton_ReturnsSameInstance(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	c1, err := NewDefaultSingleton(WithClientName(uniqueName("dsingle")))
@@ -136,7 +132,6 @@ func TestNewDefaultSingleton_ReturnsSameInstance(t *testing.T) {
 }
 
 func TestNewSingleton_ErrorPropagates(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	// Uppercase name → validation error inside New → NewSingleton returns it.
@@ -146,11 +141,63 @@ func TestNewSingleton_ErrorPropagates(t *testing.T) {
 }
 
 func TestNewDefaultSingleton_ErrorPropagates(t *testing.T) {
-	once = sync.Once{}
 	singleton.Store(nil)
 
 	boom := func(_ *ClientOptions) error { return assert.AnError }
 	c, err := NewDefaultSingleton(boom)
 	require.Error(t, err)
 	assert.Nil(t, c)
+}
+
+// A failed first init must NOT poison the singleton: a later valid call must
+// succeed (pre-fix it returned (nil, nil) because once.Do was already spent).
+func TestNewSingleton_RetriesAfterFailedInit(t *testing.T) {
+	singleton.Store(nil)
+
+	c, err := NewSingleton("UPPER", nil, nil, nil, time.Second, time.Second, 3)
+	require.Error(t, err)
+	require.Nil(t, c)
+
+	c2, err := NewSingleton(uniqueName("recovered"), nil, nil, nil, time.Second, time.Second, 3)
+	require.NoError(t, err, "a later call must be able to initialize the singleton")
+	require.NotNil(t, c2)
+	assert.Same(t, c2, Get())
+}
+
+func TestNewDefaultSingleton_RetriesAfterFailedInit(t *testing.T) {
+	singleton.Store(nil)
+
+	boom := func(_ *ClientOptions) error { return assert.AnError }
+	c, err := NewDefaultSingleton(boom)
+	require.Error(t, err)
+	require.Nil(t, c)
+
+	c2, err := NewDefaultSingleton(WithClientName(uniqueName("drecovered")))
+	require.NoError(t, err, "a later call must be able to initialize the singleton")
+	require.NotNil(t, c2)
+	assert.Same(t, c2, Get())
+}
+
+// Construction must not hold the singleton lock, so an option func that
+// re-enters singleton construction cannot deadlock (it would hang forever if the
+// lock were held during NewDefault).
+func TestNewDefaultSingleton_ReentrantOptionNoDeadlock(t *testing.T) {
+	singleton.Store(nil)
+
+	reentrant := func(_ *ClientOptions) error {
+		_, _ = NewDefaultSingleton(WithClientName(uniqueName("inner")))
+		return nil
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = NewDefaultSingleton(WithClientName(uniqueName("outer")), reentrant)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: re-entrant option in NewDefaultSingleton never returned")
+	}
 }

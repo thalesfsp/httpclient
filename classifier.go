@@ -107,10 +107,11 @@ func (hSCC CustomClassifier) Classify(err error) retrier.Action {
 		}
 	}
 
-	// Should only increment the counter if the client is set.
-	if hSCC.Client != nil {
-		hSCC.Client.counterFailed.Add(1)
-	}
+	// NOTE: the failed counter is intentionally NOT incremented here. This
+	// branch only fires for a non-retryable error, so it would miss requests
+	// that fail by EXHAUSTING their retries (the retrier stops without a final
+	// Fail classification). request() owns counterFailed so every failed request
+	// is counted exactly once.
 
 	// Should fail for everything else.
 	return retrier.Fail

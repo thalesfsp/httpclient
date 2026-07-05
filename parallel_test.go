@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -125,7 +124,7 @@ func TestClient_ParallelGet2(t *testing.T) {
 			}
 
 			// Reset singleton.
-			once = sync.Once{}
+			singleton.Store(nil)
 
 			// Should setup singleton.
 			_, err := NewDefaultSingleton(WithClientName("parallelget2"))

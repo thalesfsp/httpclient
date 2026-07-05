@@ -106,6 +106,20 @@ func TestClientOptions(t *testing.T) {
 	require.Len(t, co.CustomRetrierRegexes, 1)
 }
 
+// An empty key OR value must be a no-op (both must be non-empty to store),
+// mirroring the per-request WithHeader/WithQueryParam semantics.
+func TestClientOptions_EmptyKeyOrValueIsNoOp(t *testing.T) {
+	co := &ClientOptions{}
+
+	require.NoError(t, WithClientHeader("", "v")(co))
+	require.NoError(t, WithClientHeader("H", "")(co))
+	require.NoError(t, WithClientQueryParam("", "v")(co))
+	require.NoError(t, WithClientQueryParam("q", "")(co))
+
+	assert.Empty(t, co.Headers, "empty key/value must not add a header")
+	assert.Empty(t, co.QueryParams, "empty key/value must not add a query param")
+}
+
 func TestWithPrefix_SetsEnv(t *testing.T) {
 	t.Setenv("HTTPCLIENT_METRICS_PREFIX", "")
 	co := &ClientOptions{}

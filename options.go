@@ -261,7 +261,7 @@ func WithClientQueryParam(k, v string) ClientFunc {
 			o.QueryParams = make(map[string]string)
 		}
 
-		if k != "" || v != "" {
+		if k != "" && v != "" {
 			o.QueryParams[k] = v
 		}
 
@@ -277,7 +277,7 @@ func WithClientHeader(k, v string) ClientFunc {
 			o.Headers = make(map[string]string)
 		}
 
-		if k != "" || v != "" {
+		if k != "" && v != "" {
 			o.Headers[k] = v
 		}
 

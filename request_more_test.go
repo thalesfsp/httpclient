@@ -140,6 +140,12 @@ func TestIsRespSuccess_Table(t *testing.T) {
 	}
 }
 
+func TestIsRespSuccess_Nil(t *testing.T) {
+	assert.NotPanics(t, func() {
+		assert.False(t, IsRespSuccess(nil), "nil response must be unsuccessful, not panic")
+	})
+}
+
 func TestSetHeadersAndQueryParams_Defaults(t *testing.T) {
 	var gotHeader, gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

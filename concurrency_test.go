@@ -30,7 +30,7 @@ func TestConcurrent_SharedClient_NoRace(t *testing.T) {
 	var wg sync.WaitGroup
 	errCh := make(chan error, goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -80,11 +80,10 @@ func TestConcurrent_NilSharedFields_NoRace(t *testing.T) {
 	const goroutines = 50
 
 	var wg sync.WaitGroup
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			//nolint:bodyclose
 			resp, err := c.Get(ctx5(t), srv.URL)
 			if err == nil && resp != nil {
 				_ = resp.Body.Close()
@@ -119,4 +118,7 @@ func TestConcurrent_SingletonReadNoRace(t *testing.T) {
 	}()
 
 	wg.Wait()
+
+	// After both goroutines, the singleton is initialized and readable.
+	assert.NotNil(t, Get())
 }

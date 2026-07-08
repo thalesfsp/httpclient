@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//nolint:noctx // test helper exercising the mock server; context is not relevant here.
 func TestCreateHTTPTestServer_HeaderAndQueryEnforcement(t *testing.T) {
 	srv := CreateHTTPTestServer(
 		http.StatusOK,
@@ -60,6 +61,7 @@ func TestCreateHTTPTestServer_HeaderAndQueryEnforcement(t *testing.T) {
 	})
 }
 
+//nolint:noctx // test helper exercising the mock server; context is not relevant here.
 func TestCreateHTTPTestServer_InjectedError(t *testing.T) {
 	srv := CreateHTTPTestServer(
 		http.StatusServiceUnavailable,

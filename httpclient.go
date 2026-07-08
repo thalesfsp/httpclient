@@ -184,8 +184,55 @@ func (c *Client) traceEnabled() bool {
 	return false
 }
 
+// doAttempt performs a single HTTP attempt for the retrier: it rewinds the
+// request body (so retries replay it), sends the request, and maps a retryable
+// or non-2xx status to an error so the retrier's classifier can act on it.
+//
+// NOTE: it deliberately does NOT set req.Close — that would force
+// "Connection: close" and defeat the transport's keep-alive pool, opening a
+// fresh TCP/TLS connection on every request.
+func (c *Client) doAttempt(req *http.Request, url string) (*http.Response, error) {
+	// Rewind the request body before each attempt. The body reader is drained
+	// (and closed) by the transport on every attempt, so without this a retry
+	// would send an empty body and fail with a ContentLength mismatch. GetBody
+	// is set by http.NewRequest for the rewindable body types this package
+	// produces (string, []byte, url.Values, JSON).
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, HandleHTTPResponseError(nil, url, "rewind request body", err)
+		}
+
+		req.Body = body
+	}
+
+	// Perform the HTTP request.
+	respInternal, err := c.client.Do(req)
+	if err != nil {
+		return nil, HandleHTTPResponseError(respInternal, url, "request", err)
+	}
+
+	// A retryable status, or any non-2xx, is surfaced as an error so the
+	// retrier's classifier decides whether to retry.
+	if respInternal != nil && respInternal.StatusCode > 0 {
+		statusCodeStr := strconv.Itoa(respInternal.StatusCode)
+
+		if httpRetrierRegex.MatchString(statusCodeStr) ||
+			respInternal.StatusCode < http.StatusOK ||
+			respInternal.StatusCode >= http.StatusBadRequest {
+			return nil, HandleHTTPResponseError(respInternal, url, "request", nil)
+		}
+	}
+
+	return respInternal, nil
+}
+
 // request is the core method used to make HTTP requests with enhanced features.
 // It includes retry logic, logging, error handling, and response processing.
+//
+// counter reads it so every error path is counted in one place.
+//
+//nolint:nonamedreturns // the named `err` is intentional — the deferred failure
 func (c *Client) request(ctx context.Context, method string, url string, o ...Func) (resp *http.Response, err error) {
 	// Count every failed request exactly once, no matter which stage failed
 	// (preflight, transport / retry-exhaustion, or response-body processing). A
@@ -262,45 +309,12 @@ func (c *Client) request(ctx context.Context, method string, url string, o ...Fu
 
 	// Execute the request with retry logic (resp is the named return value).
 	if err := r.Run(func() error {
-		// NOTE: do NOT set req.Close = true. It forces "Connection: close" and
-		// defeats the transport's keep-alive pool, opening a fresh TCP/TLS
-		// connection on every request. Callers reusing a client benefit from
-		// connection reuse; they remain responsible for draining/closing bodies.
-
-		// Rewind the request body before each attempt. The body reader is
-		// drained (and closed) by the transport on every attempt, so without
-		// this a retry would send an empty body and fail with a ContentLength
-		// mismatch. GetBody is set by http.NewRequest for the rewindable body
-		// types this package produces (string, []byte, url.Values, JSON).
-		if req.GetBody != nil {
-			body, err := req.GetBody()
-			if err != nil {
-				return HandleHTTPResponseError(nil, url, "rewind request body", err)
-			}
-
-			req.Body = body
-		}
-
-		// Perform the HTTP request.
-		respInternal, err := c.client.Do(req)
-		if err != nil {
-			// Handle errors that occur during the request.
-			return HandleHTTPResponseError(respInternal, url, "request", err)
-		}
-
-		// Check if the response status code indicates a retryable error.
-		if respInternal != nil && respInternal.StatusCode > 0 {
-			statusCodeStr := strconv.Itoa(respInternal.StatusCode) // Convert status code to string.
-
-			// If the status code matches retryable codes, trigger a retry.
-			if httpRetrierRegex.MatchString(statusCodeStr) {
-				return HandleHTTPResponseError(respInternal, url, "request", err)
-			}
-
-			// If the status code is not in the 2xx range, handle as an error.
-			if respInternal.StatusCode < http.StatusOK || respInternal.StatusCode >= http.StatusBadRequest {
-				return HandleHTTPResponseError(respInternal, url, "request", err)
-			}
+		// The response body is closed by HandleHTTPResponseError on failure, and
+		// otherwise flows out via resp (closed by handleResponseBody or the
+		// caller); bodyclose cannot track that across doAttempt.
+		respInternal, attemptErr := c.doAttempt(req, url) //nolint:bodyclose
+		if attemptErr != nil {
+			return attemptErr
 		}
 
 		resp = respInternal // Assign the successful response.

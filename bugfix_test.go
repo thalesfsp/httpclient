@@ -20,7 +20,7 @@ func uniqueName(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
 }
 
-// BUG 1 regression: WithQueryParam must never return a nil Func, even when the
+// Regression 1: WithQueryParam must never return a nil Func, even when the
 // key or value is empty. A nil Func panics when applied in request().
 func TestBug_WithQueryParam_NeverNilFunc(t *testing.T) {
 	// Unit level: the option constructor must return a usable (non-nil) Func.
@@ -47,7 +47,6 @@ func TestBug_WithQueryParam_NeverNilFunc(t *testing.T) {
 	defer cancel()
 
 	require.NotPanics(t, func() {
-		//nolint:bodyclose
 		resp, err := c.Get(ctx, srv.URL, WithQueryParam("", "v"))
 		if err == nil && resp != nil {
 			_ = resp.Body.Close()
@@ -55,7 +54,7 @@ func TestBug_WithQueryParam_NeverNilFunc(t *testing.T) {
 	})
 }
 
-// BUG 2 regression: when WithRespBody decodes the body, the returned resp.Body
+// Regression 2: when WithRespBody decodes the body, the returned resp.Body
 // must still be readable with the ORIGINAL bytes (the code claims to reset it).
 func TestBug_RespBody_RemainsReadable(t *testing.T) {
 	payload := `{"name":"test","version":"1.0.0"}`
@@ -89,7 +88,7 @@ func TestBug_RespBody_RemainsReadable(t *testing.T) {
 	assert.Equal(t, payload, string(body), "resp.Body must be re-readable after WithRespBody")
 }
 
-// BUG 3 regression: a POST with a body that hits a retryable status must retry
+// Regression 3: a POST with a body that hits a retryable status must retry
 // and re-send the SAME body, not die with a ContentLength mismatch.
 func TestBug_Retry_ResendsBody(t *testing.T) {
 	var attempts int32
@@ -124,7 +123,7 @@ func TestBug_Retry_ResendsBody(t *testing.T) {
 	assert.Equal(t, "hello-body", bodies[1], "retried attempt must re-send the same body")
 }
 
-// BUG 4 regression: creating two clients with the same name (even within the
+// Regression 4: creating two clients with the same name (even within the
 // same second) must not panic on expvar metric registration.
 func TestBug_SameName_NoMetricPanic(t *testing.T) {
 	name := uniqueName("bug4dup")

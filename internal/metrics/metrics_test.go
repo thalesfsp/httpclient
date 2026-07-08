@@ -43,7 +43,7 @@ func TestNewInt_SameNameReturnsSameCounter(t *testing.T) {
 // the process-global expvar registry (previously it grew by 1 per call).
 func TestNewInt_NoLeakOnReuse(t *testing.T) {
 	before := expvarCount()
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		_ = NewInt("noleak.name.counter")
 	}
 	after := expvarCount()

@@ -1,128 +1,140 @@
-run:
-  timeout: 1m
-
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
-    - varnamelen
-    - gochecknoglobals
-    - wrapcheck
-    - exhaustivestruct
-    - exhaustruct
-    - gomnd
-    - ireturn
     - depguard
+    - err113
+    - exhaustruct
+    - gochecknoglobals
+    - ireturn
+    - mnd
     - perfsprint
     - testifylint
-    - err113
-  fast: false
-
-# Settings for specific linters
-linters-settings:
-  funlen:
-    lines: 300
-    statements: 70
-
-  cyclop:
-    skip-tests: true
-    max-complexity: 25
-    package-average: 0
-
-  wsl:
-    allow-separated-leading-comment: true
-
-issues:
-  exclude-rules:
-    - path: cmd/
-      linters:
-        - gochecknoinits
-        - gomnd
-        - forbidigo
-        - exhaustruct
-        - exhaustivestruct
-        - staticcheck
-        - varnamelen
-        - wsl
-        - nestif
-
-    - path: errorcatalog.go
-      linters:
-        - lll
-        - funlen
-        - gocyclo
-        - cyclop
-
-    - path: postgres.go
-      linters:
-        - gci
-
-    - path: auth.go
-      linters:
-        - unused
-    - path: example_test.go
-      linters:
-        - lll
-
-    - path: http/
-      linters:
-        - unparam
-        - nlreturn
-
-    - path: mongo*
-      linters:
-        - govet
-
-    - path: test.go
-      linters:
-        - testpackage
-        - cyclop
-
-    - path: _test\.go
-      linters:
-        - funlen
-        - scopelint
-        - wsl
-        - containedctx
-        - nlreturn
-        - gocognit
-        - goerr113
-        - paralleltest
-        - lll
-        - govet
-        - ifshort
-        - maligned
-        - maintidx
-        - staticcheck
-
-    - path: doc.go
-      linters:
-        - lll
-
-    - path: example_test.go
-      linters:
-        - nosnakecase
-
-    - path: resource.go
-      linters:
-        - wsl
-
-    - text: "O_WRONLY|O_RDWR|O_CREATE|O_TRUNC|O_APPEND"
-      linters:
-        - nosnakecase
-
-    - linters:
-        - lll
-      source: "json:"
-
-    - linters:
-        - gocritic
-        - godot
-        - lll
-        - wsl
-      source: "//////"
-
-    - linters:
-        - gocritic
-        - godot
-        - lll
-      source: "//"
+    - varnamelen
+    - wrapcheck
+    # Linters that golangci-lint v2's `default: all` newly added/strengthened
+    # beyond the v1.61.0 gate this project previously enforced. They are
+    # disabled here to keep the lint gate at its prior strength during the
+    # security-only upgrade to Go 1.25 (which forced the move to golangci-lint
+    # v2). Almost all of their findings are in pre-existing code; adopting them
+    # is separate modernization work, not part of a dependency-security patch.
+    - funcorder
+    - goconst
+    - godoclint
+    - modernize
+    - noinlineerr
+    - prealloc
+  settings:
+    cyclop:
+      max-complexity: 25
+      package-average: 0
+    funlen:
+      lines: 300
+      statements: 70
+    wsl:
+      allow-separated-leading-comment: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - exhaustivestruct
+          - exhaustruct
+          - forbidigo
+          - gochecknoinits
+          - mnd
+          - nestif
+          - staticcheck
+          - varnamelen
+          - wsl
+        path: cmd/
+      - linters:
+          - cyclop
+          - funlen
+          - gocyclo
+          - lll
+        path: errorcatalog.go
+      - linters:
+          - unused
+        path: auth.go
+      - linters:
+          - lll
+        path: example_test.go
+      - linters:
+          - nlreturn
+          - unparam
+        path: http/
+      - linters:
+          - govet
+        path: mongo*
+      - linters:
+          - cyclop
+          - testpackage
+        path: test.go
+      - linters:
+          - containedctx
+          - err113
+          - funlen
+          - gocognit
+          - govet
+          - ifshort
+          - lll
+          - maintidx
+          - maligned
+          - nlreturn
+          - paralleltest
+          - scopelint
+          - staticcheck
+          - wsl
+          - wsl_v5 # v2 renamed wsl -> wsl_v5; keep tests excluded as before.
+        path: _test\.go
+      - linters:
+          - lll
+        path: doc.go
+      - linters:
+          - nosnakecase
+        path: example_test.go
+      - linters:
+          - wsl
+        path: resource.go
+      - linters:
+          - nosnakecase
+        text: O_WRONLY|O_RDWR|O_CREATE|O_TRUNC|O_APPEND
+      - linters:
+          - lll
+        source: 'json:'
+      - linters:
+          - gocritic
+          - godot
+          - lll
+          - wsl
+        source: //////
+      - linters:
+          - gocritic
+          - godot
+          - lll
+        source: //
+      - linters:
+          - cyclop
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - postgres.go

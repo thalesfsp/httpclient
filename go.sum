@@ -98,6 +98,8 @@ github.com/thalesfsp/status v1.0.18 h1:omyxzT8rsujxztMyS8G4eyIauU3I4FBMUSRrNpbbT
 github.com/thalesfsp/status v1.0.18/go.mod h1:ZwlaaU4tPETPq/wf3bsS/sVqSQpMUPMK7iTqkSSJqVY=
 github.com/thalesfsp/sypl v1.9.18 h1:TWR7zWRLA9kJECsvNghdWtGPll7+BrHlaV/08xeV8dg=
 github.com/thalesfsp/sypl v1.9.18/go.mod h1:XVdPSJi9P0QptQnWaUUjZ67GpUBI91Q8AQzbUmy9zj4=
+github.com/thalesfsp/sypl/v2 v2.0.0 h1:sG8R5DPKpsbq0pF+jSlEy1XNYIrhTUbfwA1duLmq5/8=
+github.com/thalesfsp/sypl/v2 v2.0.0/go.mod h1:RCM1KBOet35pLWc6VPixSPPa5neyxaGJHGeRT5CEczY=
 github.com/thalesfsp/validation v0.0.3 h1:iXWXZLALIGUKJSxAeDt40kxUyzjeHeHc86f9fP9vin4=
 github.com/thalesfsp/validation v0.0.3/go.mod h1:0jwfQpbuzVJgVSPoiDJ7KCT76CLdMq4R++InC353SZ8=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

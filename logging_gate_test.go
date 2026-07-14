@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thalesfsp/sypl/level"
+	"github.com/thalesfsp/sypl/v2/level"
 )
 
 // With trace logging enabled, the request path builds and logs fields (the

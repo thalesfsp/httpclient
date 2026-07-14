@@ -9,7 +9,7 @@ require (
 	github.com/thalesfsp/concurrentloop v1.3.5
 	github.com/thalesfsp/customerror v1.2.9
 	github.com/thalesfsp/status v1.0.18
-	github.com/thalesfsp/sypl v1.9.18
+	github.com/thalesfsp/sypl/v2 v2.0.0
 	github.com/thalesfsp/validation v0.0.3
 	go.elastic.co/apm v1.15.0
 )
@@ -41,6 +41,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/santhosh-tekuri/jsonschema v1.2.4 // indirect
 	github.com/thalesfsp/randomness v0.0.9 // indirect
+	github.com/thalesfsp/sypl v1.9.18 // indirect
 	go.elastic.co/fastjson v1.4.0 // indirect
 	go.opentelemetry.io/otel v1.32.0 // indirect
 	go.opentelemetry.io/otel/metric v1.32.0 // indirect

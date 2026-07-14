@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/thalesfsp/httpclient/v2/internal/shared"
-	"github.com/thalesfsp/sypl"
-	"github.com/thalesfsp/sypl/level"
+	"github.com/thalesfsp/sypl/v2"
+	"github.com/thalesfsp/sypl/v2/level"
 )
 
 // Logger conforms Sypl to Req's logger requirements.

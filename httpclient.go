@@ -26,9 +26,9 @@ import (
 	"github.com/thalesfsp/httpclient/v2/internal/metrics"
 	"github.com/thalesfsp/httpclient/v2/internal/shared"
 	"github.com/thalesfsp/status"
-	"github.com/thalesfsp/sypl"
-	"github.com/thalesfsp/sypl/fields"
-	"github.com/thalesfsp/sypl/level"
+	"github.com/thalesfsp/sypl/v2"
+	"github.com/thalesfsp/sypl/v2/fields"
+	"github.com/thalesfsp/sypl/v2/level"
 	"github.com/thalesfsp/validation"
 )
 

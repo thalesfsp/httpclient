@@ -5,7 +5,6 @@
 PROJECT_FULL_NAME := httpclient
 
 HAS_GODOC := $(shell command -v godoc;)
-HAS_GOLANGCI := $(shell command -v golangci-lint;)
 
 default: ci
 
@@ -27,14 +26,11 @@ endif
 	@godoc -http :6060
 
 lint:
-ifndef HAS_GOLANGCI
-	@echo "Could not find golangci-list, installing it"
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
-endif
-	@golangci-lint run -v -c .golangci.yml && echo "Lint OK"
+	@go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run \
+	--allow-serial-runners --timeout 10m -v -c .golangci.yml && echo "Lint OK"
 
 test:
-	@ENVIRONMENT="testing" configurer l d -f testing.env -- go test -timeout 60s -short -v -race -cover \
+	@ENVIRONMENT="testing" SYPL_LEVEL="debug" go test -timeout 60s -short -v -race -cover \
 	-coverprofile=coverage.out ./... && echo "Test OK"
 
 .PHONY: ci \

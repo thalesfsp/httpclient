@@ -18,6 +18,8 @@ A robust and feature-rich Go HTTP client library that provides pre-configured HT
 
 ## Install
 
+Requires Go 1.26.11 or newer. Development and CI use Go 1.26.11.
+
 ### Package
 
 ```bash
@@ -27,6 +29,11 @@ go get github.com/thalesfsp/httpclient/v2
 ## Usage
 
 See `httpclient_test.go` and other `*_test.go` files.
+
+Unnamed default clients keep unique names and User-Agent values, and share the
+three `httpclient.<status>.counter` metrics. Clients configured with an explicit
+name retain their existing `httpclient.<name>.<status>.counter` metrics. Use
+`mise exec -- make ci` to run the same lint, race test and coverage checks as CI.
 
 ## Error Handling
 

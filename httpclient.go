@@ -598,6 +598,20 @@ func New(
 	retrierBackoffDuration time.Duration,
 	retrierBackoffTimes int,
 ) (*Client, error) {
+	return newClient(name, shared.PackageName+"."+name, headers, queryParams, customRetrierRegexes,
+		timeout, retrierBackoffDuration, retrierBackoffTimes)
+}
+
+// newClient separates metric identity from the caller-visible client name.
+func newClient(
+	name, metricPrefix string,
+	headers map[string]string,
+	queryParams map[string]string,
+	customRetrierRegexes []*regexp.Regexp,
+	timeout time.Duration,
+	retrierBackoffDuration time.Duration,
+	retrierBackoffTimes int,
+) (*Client, error) {
 	// Ensure that Client implements the IHTTP interface.
 	var _ IHTTP = (*Client)(nil)
 
@@ -622,9 +636,9 @@ func New(
 			Timeout: timeout, // Set the timeout for HTTP requests.
 		},
 
-		counterFailed:  metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Failed, DefaultMetricCounterLabel)),
-		counterRetried: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Retried, DefaultMetricCounterLabel)),
-		counterSuccess: metrics.NewInt(fmt.Sprintf("%s.%s.%s.%s", shared.PackageName, name, status.Succeeded, DefaultMetricCounterLabel)),
+		counterFailed:  metrics.NewInt(fmt.Sprintf("%s.%s.%s", metricPrefix, status.Failed, DefaultMetricCounterLabel)),
+		counterRetried: metrics.NewInt(fmt.Sprintf("%s.%s.%s", metricPrefix, status.Retried, DefaultMetricCounterLabel)),
+		counterSuccess: metrics.NewInt(fmt.Sprintf("%s.%s.%s", metricPrefix, status.Succeeded, DefaultMetricCounterLabel)),
 
 		Logger: logger,
 
@@ -666,6 +680,10 @@ func New(
 
 // NewDefault creates a new Client instance with default settings.
 //
+// Unnamed clients share aggregate httpclient.<status>.counter metrics while
+// retaining unique names and User-Agent values. Explicitly named clients keep
+// their existing per-name metrics.
+//
 // It sets the:
 // - Name to the package name and a random UUID.
 // - Headers to:
@@ -706,13 +724,20 @@ func NewDefault(opts ...ClientFunc) (*Client, error) {
 		}
 	}
 
+	// Aggregate unnamed clients without retaining each generated UUID in expvar.
+	// Omitting the name segment also keeps these metrics distinct from every
+	// explicitly named client, including one named "default".
+	metricPrefix := shared.PackageName
+
 	// Update the User-Agent header with the client name.
 	if defaultOptions.Name != name {
 		defaultOptions.Headers["User-Agent"] = defaultOptions.Name
+		metricPrefix += "." + defaultOptions.Name
 	}
 
-	return New(
+	return newClient(
 		defaultOptions.Name,
+		metricPrefix,
 		defaultOptions.Headers,
 		defaultOptions.QueryParams,
 		defaultOptions.CustomRetrierRegexes,
